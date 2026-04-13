@@ -1,3 +1,6 @@
+# database
+data/results.db
+
 # local env files
 .env
 .env.*
