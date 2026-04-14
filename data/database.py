@@ -1,3 +1,4 @@
+import json
 import sqlite3
 from datetime import datetime
 from typing import Optional
@@ -8,38 +9,57 @@ DB_PATH = "data/results.db"
 
 _CREATE_TABLE = """
 CREATE TABLE IF NOT EXISTS attack_results (
-    attack_id        TEXT PRIMARY KEY,
-    attack_type      TEXT NOT NULL,
-    attack_technique TEXT NOT NULL,
-    prompt_text      TEXT NOT NULL,
-    target_model     TEXT NOT NULL,
-    response_text    TEXT,
-    timestamp        TEXT NOT NULL,
-    success          INTEGER,
-    severity_score   REAL,
-    judge_reasoning  TEXT,
-    error            TEXT
+    attack_id           TEXT PRIMARY KEY,
+    attack_type         TEXT NOT NULL,
+    attack_technique    TEXT NOT NULL,
+    prompt_text         TEXT NOT NULL,
+    target_model        TEXT NOT NULL,
+    response_text       TEXT,
+    timestamp           TEXT NOT NULL,
+    success             INTEGER,
+    severity_score      REAL,
+    judge_reasoning     TEXT,
+    error               TEXT,
+    financial_subdomain TEXT,
+    tags                TEXT
 )
 """
 
+# Columns added after the initial schema — applied at init time if missing.
+_MIGRATIONS = [
+    "ALTER TABLE attack_results ADD COLUMN financial_subdomain TEXT",
+    "ALTER TABLE attack_results ADD COLUMN tags TEXT",
+]
+
 
 def init_db() -> None:
-    """Create the database and attack_results table if they don't exist."""
+    """Create the database and attack_results table if they don't exist.
+
+    Also applies any additive column migrations so that existing databases
+    gain the new columns without losing data.
+    """
     with sqlite3.connect(DB_PATH) as conn:
         conn.execute(_CREATE_TABLE)
+        for stmt in _MIGRATIONS:
+            try:
+                conn.execute(stmt)
+            except sqlite3.OperationalError:
+                pass  # column already exists — safe to ignore
         conn.commit()
 
 
 def save_result(result: AttackResult) -> None:
     """Insert or replace an AttackResult row (works for initial save and post-eval updates)."""
     success_int = None if result.success is None else int(result.success)
+    tags_json = json.dumps(result.tags) if result.tags else None
     with sqlite3.connect(DB_PATH) as conn:
         conn.execute(
             """
             INSERT OR REPLACE INTO attack_results (
                 attack_id, attack_type, attack_technique, prompt_text, target_model,
-                response_text, timestamp, success, severity_score, judge_reasoning, error
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                response_text, timestamp, success, severity_score, judge_reasoning, error,
+                financial_subdomain, tags
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 result.attack_id,
@@ -53,6 +73,8 @@ def save_result(result: AttackResult) -> None:
                 result.severity_score,
                 result.judge_reasoning,
                 result.error,
+                result.financial_subdomain,
+                tags_json,
             ),
         )
         conn.commit()
@@ -60,6 +82,8 @@ def save_result(result: AttackResult) -> None:
 
 def _row_to_result(row: sqlite3.Row) -> AttackResult:
     success = None if row["success"] is None else bool(row["success"])
+    raw_tags = row["tags"]
+    tags = json.loads(raw_tags) if raw_tags else []
     return AttackResult(
         attack_id=row["attack_id"],
         attack_type=AttackType(row["attack_type"]),
@@ -72,6 +96,8 @@ def _row_to_result(row: sqlite3.Row) -> AttackResult:
         severity_score=row["severity_score"],
         judge_reasoning=row["judge_reasoning"],
         error=row["error"],
+        financial_subdomain=row["financial_subdomain"],
+        tags=tags,
     )
 
 

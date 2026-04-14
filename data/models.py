@@ -57,6 +57,9 @@ class AttackResult(BaseModel):
     severity_score: Optional[float] = None
     judge_reasoning: Optional[str] = None
     error: Optional[str] = None
+    # Domain metadata (from YAML seed, persisted for analytics)
+    financial_subdomain: Optional[str] = None   # e.g. "3a", "3b", "3c", or None for generic attacks
+    tags: list[str] = []                         # free-form labels from the seed file
 
     def model_post_init(self, __context) -> None:
         if self.attack_id is None:
