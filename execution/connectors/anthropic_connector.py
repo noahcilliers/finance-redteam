@@ -52,4 +52,12 @@ class AnthropicConnector(ModelConnector):
             del kwargs["temperature"]
             resp = await self._client.messages.create(**kwargs)
 
-        return resp.content[0].text if resp.content else ""
+        if resp.content:
+            return resp.content[0].text
+        # stop_reason='refusal' → model refused with no output text. Still a
+        # meaningful result: the attack did NOT elicit a harmful response. We
+        # return a sentinel so AttackResult.response_text is non-empty and
+        # downstream logic can distinguish refusal from a real failure.
+        if getattr(resp, "stop_reason", None) == "refusal":
+            return "[REFUSAL]"
+        return ""
