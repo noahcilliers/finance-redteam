@@ -5,3 +5,6 @@ data/results.db
 .env
 .env.*
 .env*.local
+
+# attack library — kept off public VCS for ethical reasons
+attacks/library/
