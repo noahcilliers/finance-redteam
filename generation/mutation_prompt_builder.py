@@ -42,7 +42,7 @@ class GenerationConfig:
     languages: list[str] = field(default_factory=list)
     encoding_styles: list[str] = field(default_factory=list)
     variants_per_seed: int = 8
-    attacker_model: str = "claude-opus-4-6"
+    attacker_model: str = "claude-sonnet-4-6"
     target_model: str = "gpt-4o"
     custom_instructions: str = ""
     feedback_loop: dict[str, Any] = field(default_factory=dict)

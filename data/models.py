@@ -6,24 +6,49 @@ from pydantic import BaseModel, ConfigDict, field_validator
 
 
 class AttackType(str, Enum):
+    # Seed library values
+    domain_probe = "domain_probe"
+    jailbreak = "jailbreak"
     prompt_injection = "prompt_injection"
-    roleplay_jailbreak = "roleplay_jailbreak"
     encoding_obfuscation = "encoding_obfuscation"
+    multilingual_bypass = "multilingual_bypass"
+    # Legacy / additional taxonomy
+    roleplay_jailbreak = "roleplay_jailbreak"
     multi_turn_escalation = "multi_turn_escalation"
     sensitive_info_disclosure = "sensitive_info_disclosure"
     excessive_agency = "excessive_agency"
-    multilingual_bypass = "multilingual_bypass"
+    unknown = "unknown"
 
 
 class AttackTechnique(str, Enum):
-    dan = "dan"
+    # Seed library values
+    alternate_reality_roleplay = "alternate_reality_roleplay"
     base64 = "base64"
+    character_capture = "character_capture"
+    context_recall = "context_recall"
+    dan_roleplay = "dan_roleplay"
+    direct_injection = "direct_injection"
+    direct_request = "direct_request"
+    format_shift = "format_shift"
+    hypothetical_framing = "hypothetical_framing"
+    indirect_injection = "indirect_injection"
+    jurisdiction_claim = "jurisdiction_claim"
+    language_probe = "language_probe"
+    language_switch = "language_switch"
+    leetspeak = "leetspeak"
+    persona_roleplay = "persona_roleplay"
+    rag_extraction = "rag_extraction"
+    refusal_bypass = "refusal_bypass"
+    system_prompt_extraction = "system_prompt_extraction"
+    token_smuggling = "token_smuggling"
+    unicode_homoglyph = "unicode_homoglyph"
+    validation_framing = "validation_framing"
+    # Legacy / additional taxonomy
+    dan = "dan"
     rot13 = "rot13"
     homoglyph = "homoglyph"
-    system_prompt_extraction = "system_prompt_extraction"
     incremental_escalation = "incremental_escalation"
-    character_capture = "character_capture"
-    token_smuggling = "token_smuggling"
+    unknown = "unknown"
 
 
 class AttackConfig(BaseModel):

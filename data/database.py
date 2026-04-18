@@ -1,11 +1,16 @@
 import json
+import os
 import sqlite3
 from datetime import datetime
 from typing import Optional
 
 from data.models import AttackResult, AttackType, AttackTechnique
 
-DB_PATH = "data/results.db"
+# Results DB path. Defaults to data/results.db under the project root but can
+# be overridden via the FINANCE_REDTEAM_DB env var — useful when the default
+# project location is on a shared/mounted filesystem that doesn't tolerate
+# SQLite's locking requirements.
+DB_PATH = os.environ.get("FINANCE_REDTEAM_DB", "data/results.db")
 
 _CREATE_TABLE = """
 CREATE TABLE IF NOT EXISTS attack_results (
