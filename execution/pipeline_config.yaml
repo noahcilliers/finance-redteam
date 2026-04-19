@@ -9,9 +9,13 @@
 # 1. Seed selection (gen)
 # -----------------------------------------------------------
 seed_filters:
-  attack_ids:                   # exact match — only these two seeds
-    - pi_direct_override_001
-    - pi_direct_override_002
+  financial_subdomain:
+    - 3a_investment_advice
+    - 3b_fraud_and_scams
+  tags_none:
+    - requires_system_prompt
+    - requires_rag_fixture
+
 
 # -----------------------------------------------------------
 # 2. Mutation techniques (gen)
@@ -47,8 +51,8 @@ target_system_prompt: null
 # -----------------------------------------------------------
 attacker_max_concurrent: 3    # parallel in-flight calls to the attacker LLM
 attacker_rps: 2.0             # attacker LLM calls per second
-target_max_concurrent: 5      # parallel in-flight calls to the target
-target_rps: 5.0               # target model calls per second
+target_max_concurrent: 3      # parallel in-flight calls to the target
+target_rps: 0.8               # target model calls per second (0.8 rps ≈ 48 RPM, safely under a 50 RPM org cap)
 
 # -----------------------------------------------------------
 # 6. Run behaviour (exec)

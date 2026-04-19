@@ -30,6 +30,7 @@ import argparse
 import asyncio
 import json
 import logging
+import random
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -54,6 +55,7 @@ from execution.deepteam_bridge import (
     testcase_to_attack_result,
 )
 from execution.pipeline_config import PipelineConfig
+from execution.rate_limiter import RateLimiter
 from generation.seed_loader import SeedLoader
 
 logger = logging.getLogger(__name__)
@@ -114,6 +116,18 @@ def _parse_args() -> argparse.Namespace:
         help="Override concurrency cap. Defaults to config.target_max_concurrent.",
     )
     p.add_argument(
+        "--rpm",
+        type=float,
+        default=None,
+        help=(
+            "Override target requests-per-minute ceiling. The runner converts "
+            "this to a minimum interval between requests (RateLimiter), so "
+            "concurrent fast requests don't burst past it. Defaults to "
+            "config.target_rps * 60. Example: --rpm 45 to stay under a 50 RPM "
+            "Anthropic org limit with safety margin."
+        ),
+    )
+    p.add_argument(
         "--no-enhancers",
         action="store_true",
         help=(
@@ -152,6 +166,16 @@ def _parse_args() -> argparse.Namespace:
         "-v", "--verbose",
         action="store_true",
         help="Enable DEBUG-level logging.",
+    )
+    p.add_argument(
+        "--show-full-responses",
+        action="store_true",
+        help=(
+            "In the summary table, print the full response body under each "
+            "VULNERABLE row and the full error string under each ERROR row. "
+            "Useful for inspecting what the target actually produced without "
+            "having to query data/results.db."
+        ),
     )
     return p.parse_args()
 
@@ -229,6 +253,36 @@ def _risk_assessment_iter_test_cases(risk_assessment):
                         yield tc
 
 
+# HTTP status codes that are safe to retry on: rate limits, overloaded servers,
+# gateway/upstream failures. Anthropic uses 529 for "Overloaded"; everyone else
+# uses 429 for rate limits and 500-504 for transient server errors.
+_TRANSIENT_STATUSES = {429, 500, 502, 503, 504, 529}
+
+# SDK exception class-name fallbacks, since we stay decoupled from specific
+# provider SDKs (anthropic / openai / google). Matches names across versions.
+_TRANSIENT_EXC_NAMES = {
+    "RateLimitError",
+    "APIConnectionError",
+    "APITimeoutError",
+    "InternalServerError",
+    "ServiceUnavailableError",
+    "OverloadedError",
+}
+
+
+def _is_transient(exc: BaseException) -> bool:
+    """True if the exception is worth retrying (rate limit, overload, net blip)."""
+    if isinstance(exc, (asyncio.TimeoutError, TimeoutError)):
+        return True
+    status = getattr(exc, "status_code", None)
+    if isinstance(status, int) and status in _TRANSIENT_STATUSES:
+        return True
+    name = type(exc).__name__
+    if name in _TRANSIENT_EXC_NAMES or "Overloaded" in name:
+        return True
+    return False
+
+
 async def _run_library_faithful(
     *,
     seeds: list[dict],
@@ -238,6 +292,7 @@ async def _run_library_faithful(
     simulator_model: str,
     evaluation_model: str,
     max_concurrent: int,
+    target_rps: float,
     include_llm_enhancers: bool,
 ):
     """
@@ -291,31 +346,50 @@ async def _run_library_faithful(
         )
 
     logger.info(
-        "library-faithful mode | executing %d test case(s) | concurrency=%d",
-        len(test_cases), max_concurrent,
+        "library-faithful mode | executing %d test case(s) | concurrency=%d | rps=%.3f (~%d RPM)",
+        len(test_cases), max_concurrent, target_rps, int(round(target_rps * 60)),
     )
 
-    # Bounded concurrency: semaphore prevents overwhelming the rate-limited API.
-    semaphore = asyncio.Semaphore(max_concurrent)
+    # Combined concurrency + rate cap. The semaphore bounds parallelism, and
+    # min_interval_s enforces a hard floor between acquisitions so concurrent
+    # fast requests can't burst past the provider's per-minute ceiling.
+    limiter = RateLimiter.from_rps(target_rps, max_concurrent=max_concurrent)
+
+    max_attempts = 4      # 1 initial + 3 retries
+    base_delay   = 1.0    # seconds; doubled each attempt with jitter
 
     async def _run_one(tc) -> None:
-        async with semaphore:
-            try:
-                tc.actual_output = await connector.chat(
-                    user_prompt=tc.input,
-                    system_prompt=system_prompt,
-                )
-                logger.debug(
-                    "  [ok] vuln=%s method=%s | response_len=%d",
-                    tc.vulnerability, tc.attack_method,
-                    len(tc.actual_output or ""),
-                )
-            except Exception as exc:
-                tc.error = str(exc)
-                logger.warning(
-                    "  [err] vuln=%s method=%s | %s",
-                    tc.vulnerability, tc.attack_method, exc,
-                )
+        async with limiter:
+            last_exc: Exception | None = None
+            for attempt in range(1, max_attempts + 1):
+                try:
+                    tc.actual_output = await connector.chat(
+                        user_prompt=tc.input,
+                        system_prompt=system_prompt,
+                    )
+                    logger.debug(
+                        "  [ok] vuln=%s method=%s | response_len=%d",
+                        tc.vulnerability, tc.attack_method,
+                        len(tc.actual_output or ""),
+                    )
+                    return
+                except Exception as exc:
+                    last_exc = exc
+                    if attempt < max_attempts and _is_transient(exc):
+                        delay = base_delay * (2 ** (attempt - 1)) + random.uniform(0, 0.5)
+                        logger.warning(
+                            "  [retry %d/%d in %.1fs] vuln=%s method=%s | %s",
+                            attempt, max_attempts, delay,
+                            tc.vulnerability, tc.attack_method, exc,
+                        )
+                        await asyncio.sleep(delay)
+                        continue
+                    break  # non-transient, or attempts exhausted
+            tc.error = str(last_exc)
+            logger.warning(
+                "  [err] vuln=%s method=%s | %s",
+                tc.vulnerability, tc.attack_method, last_exc,
+            )
 
     await asyncio.gather(*(_run_one(tc) for tc in test_cases))
 
@@ -328,13 +402,23 @@ async def _run_library_faithful(
     return test_cases
 
 
-def _print_summary(results: list[AttackResult], target_model: str) -> None:
-    """Print a human-readable attack summary table to stdout."""
+def _print_summary(
+    results: list[AttackResult],
+    target_model: str,
+    *,
+    show_full_responses: bool = False,
+) -> None:
+    """Print a human-readable attack summary table to stdout.
+
+    When show_full_responses is True, the full response body is printed below
+    each VULNERABLE row (and the full error string below each ERROR row).
+    """
     W = 88
     SECURE    = "SECURE"
     VULN      = "VULNERABLE"
     PENDING   = "pending"
     REFUSAL   = "[REFUSAL]"
+    PREVIEW_LEN = 200
 
     print()
     print("=" * W)
@@ -356,7 +440,7 @@ def _print_summary(results: list[AttackResult], target_model: str) -> None:
         seed_label = ", ".join(seed_key)
         print(f"\n  Seed: {seed_label}")
         print(f"  {'Method':<22}  {'Outcome':<12}  Response preview")
-        print(f"  {'-'*22}  {'-'*12}  {'-'*44}")
+        print(f"  {'-'*22}  {'-'*12}  {'-'*PREVIEW_LEN}")
         for r in group:
             method = next(
                 (t.replace("deepteam_method:", "") for t in (r.tags or []) if t.startswith("deepteam_method:")),
@@ -375,11 +459,27 @@ def _print_summary(results: list[AttackResult], target_model: str) -> None:
             else:
                 outcome = PENDING
 
-            resp_preview = (
-                "(silent refusal — stop_reason=refusal)" if r.response_text == REFUSAL
-                else (r.response_text or "").replace("\n", " ")[:44]
-            )
+            # Build the short preview. Errors now surface the exception text
+            # (previously blank, which hid whether we were looking at a 400
+            # safety-filter rejection vs a 429 rate limit vs a network error).
+            if outcome == "ERROR":
+                resp_preview = (r.error or "").replace("\n", " ")[:PREVIEW_LEN]
+            elif r.response_text == REFUSAL:
+                resp_preview = "(silent refusal — stop_reason=refusal)"
+            else:
+                resp_preview = (r.response_text or "").replace("\n", " ")[:PREVIEW_LEN]
             print(f"  {method:<22}  {outcome:<12}  {resp_preview}")
+
+            # Optional full-body dump — indented under the row so the table
+            # layout still reads cleanly. Only VULNERABLE + ERROR benefit from
+            # this; SECURE/REFUSAL rows are already summarised.
+            if show_full_responses and outcome in (VULN, "ERROR"):
+                full = r.error if outcome == "ERROR" else r.response_text
+                if full:
+                    print(f"  {'':<22}  {'':<12}  ---- full {outcome.lower()} ----")
+                    for line in full.splitlines() or [full]:
+                        print(f"  {'':<22}  {'':<12}  {line}")
+                    print(f"  {'':<22}  {'':<12}  {'-' * 30}")
 
     # Aggregate counts
     n_secure  = sum(1 for r in results if r.response_text and (
@@ -409,6 +509,8 @@ async def run_deepteam_pipeline(
     max_concurrent: int | None,
     no_enhancers: bool,
     no_llm_enhancers: bool = False,
+    show_full_responses: bool = False,
+    target_rps_override: float | None = None,
 ) -> list[AttackResult]:
     """
     End-to-end DeepTeam run. Returns the list of persisted AttackResult
@@ -458,6 +560,7 @@ async def run_deepteam_pipeline(
     )
 
     concurrency = max_concurrent or cfg.target_max_concurrent
+    effective_rps = target_rps_override if target_rps_override is not None else cfg.target_rps
 
     # 4. Branch on mode — library-faithful vs simulator
     if mode == "library-faithful":
@@ -470,6 +573,7 @@ async def run_deepteam_pipeline(
             simulator_model=simulator_model,
             evaluation_model=evaluation_model,
             max_concurrent=concurrency,
+            target_rps=effective_rps,
             include_llm_enhancers=not no_llm_enhancers,
         )
 
@@ -490,7 +594,7 @@ async def run_deepteam_pipeline(
             "DeepTeam run complete | results=%d | ok=%d | errors=%d",
             len(results), ok, errs,
         )
-        _print_summary(results, cfg.target_model)
+        _print_summary(results, cfg.target_model, show_full_responses=show_full_responses)
         return results
 
     elif mode == "simulator":
@@ -607,6 +711,8 @@ async def _main() -> int:
         max_concurrent=args.max_concurrent,
         no_enhancers=args.no_enhancers,
         no_llm_enhancers=args.no_llm_enhancers,
+        show_full_responses=args.show_full_responses,
+        target_rps_override=(args.rpm / 60.0) if args.rpm is not None else None,
     )
 
     if cfg.save_jsonl and results:
