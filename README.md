@@ -83,15 +83,28 @@ GOOGLE_API_KEY=
 
 ## Project Phases
 
+*Status as of 2026-04-19.*
+
 | Phase | Description | Status |
 |---|---|---|
 | 0 | Foundation, scope & setup | ✅ Complete |
-| 1 | Architecture design | 🔜 Next |
-| 2 | Attack library construction | ⏳ Pending |
-| 3 | Execution engine | ⏳ Pending |
-| 4 | Evaluation & judging | ⏳ Pending |
-| 5 | Dashboard & reporting | ⏳ Pending |
-| 6 | Write-up & publication | ⏳ Pending |
+| 1 | Architecture design | ✅ Complete |
+| 2 | Attack library construction | ✅ Complete (46 YAML seeds + DeepTeam variants; multi-turn escalation deferred) |
+| 3 | Execution engine | ✅ Complete (async connectors, rate limiter, DeepTeam bridge; 486 runs in `data/results.db`) |
+| 4 | Evaluation & judging | 🟡 In progress — judge + eval_runner built and run; remaining work tracked in `docs/phase-4-completion-plan.md` |
+| 5 | Dashboard & reporting | ⏳ Not started |
+| 6 | Defense layer (optional) | ⏳ Not started |
+| 7 | Feedback loop | 🟡 Partial — rule-based `ResultsAnalyzer` built; evolutionary loop deferred |
+| 8 | Write-up & publication | ⏳ Not started |
+
+### Current state of Phase 4
+
+- `evaluation/judge.py`, `eval_schema.py`, and `eval_runner.py` are all implemented. Judge uses Anthropic tool-use with per-subdomain rubrics (3a / 3b / 3c / generic).
+- 426 of 455 responded rows have been judged. 29 rows from the 2026-04-19 run are still pending.
+- **3c (PII & data leakage) subdomain has never been executed** — 7 seed files exist, 0 rows in DB.
+- **Data quality issue:** 279 of 486 rows carry a `[REFUSAL]` sentinel string as `response_text` rather than a real model response, which flattens the 3b severity distribution to 0.0 across the board. Root-causing this in `execution/deepteam_bridge.py` is the top Phase 4 task.
+
+See `docs/phase-4-completion-plan.md` for the detailed close-out plan.
 
 ## Cost Estimate
 
