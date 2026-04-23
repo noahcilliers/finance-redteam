@@ -96,8 +96,37 @@ _JUDGEABLE_WHERE = (
 )
 
 
-def _fetch_pending(db_path: str, batch_size: int) -> list[dict]:
+def _scope_clauses(
+    model: Optional[str] = None,
+    subdomain: Optional[str] = None,
+) -> tuple[str, list]:
+    """
+    Return (extra_sql, params) for optional target_model / financial_subdomain scope.
+
+    The returned string is empty or starts with " AND ", ready to be appended
+    directly to an existing WHERE clause.
+    """
+    parts: list[str] = []
+    params: list = []
+    if model:
+        parts.append("target_model = ?")
+        params.append(model)
+    if subdomain:
+        parts.append("financial_subdomain = ?")
+        params.append(subdomain)
+    extra = (" AND " + " AND ".join(parts)) if parts else ""
+    return extra, params
+
+
+def _fetch_pending(
+    db_path: str,
+    batch_size: int,
+    *,
+    model: Optional[str] = None,
+    subdomain: Optional[str] = None,
+) -> list[dict]:
     """Rows with a real response and no prior judge verdict."""
+    scope_sql, scope_params = _scope_clauses(model, subdomain)
     con = sqlite3.connect(db_path)
     con.row_factory = sqlite3.Row
     rows = con.execute(
@@ -105,21 +134,30 @@ def _fetch_pending(db_path: str, batch_size: int) -> list[dict]:
         SELECT * FROM attack_results
         WHERE {_JUDGEABLE_WHERE}
           AND success IS NULL
+          {scope_sql}
         ORDER BY timestamp ASC
         LIMIT ?
         """,
-        (batch_size,),
+        (*scope_params, batch_size),
     ).fetchall()
     con.close()
     return [dict(r) for r in rows]
 
 
-def _fetch_pending_excluding(db_path: str, batch_size: int, exclude_ids: set[str]) -> list[dict]:
+def _fetch_pending_excluding(
+    db_path: str,
+    batch_size: int,
+    exclude_ids: set[str],
+    *,
+    model: Optional[str] = None,
+    subdomain: Optional[str] = None,
+) -> list[dict]:
     """
     Same as _fetch_pending but skips IDs already seen this run.
     This is the hard guard against infinite loops — even if a DB write fails,
     a row can only be attempted once per process invocation.
     """
+    scope_sql, scope_params = _scope_clauses(model, subdomain)
     con = sqlite3.connect(db_path)
     con.row_factory = sqlite3.Row
     if exclude_ids:
@@ -130,10 +168,11 @@ def _fetch_pending_excluding(db_path: str, batch_size: int, exclude_ids: set[str
             WHERE {_JUDGEABLE_WHERE}
               AND success IS NULL
               AND attack_id NOT IN ({placeholders})
+              {scope_sql}
             ORDER BY timestamp ASC
             LIMIT ?
             """,
-            (*sorted(exclude_ids), batch_size),
+            (*sorted(exclude_ids), *scope_params, batch_size),
         ).fetchall()
     else:
         rows = con.execute(
@@ -141,10 +180,11 @@ def _fetch_pending_excluding(db_path: str, batch_size: int, exclude_ids: set[str
             SELECT * FROM attack_results
             WHERE {_JUDGEABLE_WHERE}
               AND success IS NULL
+              {scope_sql}
             ORDER BY timestamp ASC
             LIMIT ?
             """,
-            (batch_size,),
+            (*scope_params, batch_size),
         ).fetchall()
     con.close()
     return [dict(r) for r in rows]
@@ -488,9 +528,28 @@ class EvalRunner:
 
     # ---- Public entry points ----------------------------------------
 
-    def run_pending(self, dry_run: bool = False) -> None:
-        """Evaluate all rows where success IS NULL."""
-        print(f"[eval_runner] Evaluating pending rows (batch_size={self.cfg.batch_size})…")
+    def run_pending(
+        self,
+        dry_run: bool = False,
+        *,
+        model: Optional[str] = None,
+        subdomain: Optional[str] = None,
+    ) -> None:
+        """Evaluate all rows where success IS NULL.
+
+        Optional `model` and `subdomain` scope the run to a single target_model
+        or financial_subdomain so callers can judge one model's output at a time
+        without re-judging everything.
+        """
+        scope_desc = ""
+        if model:
+            scope_desc += f" model={model}"
+        if subdomain:
+            scope_desc += f" subdomain={subdomain}"
+        print(
+            f"[eval_runner] Evaluating pending rows"
+            f"{scope_desc} (batch_size={self.cfg.batch_size})…"
+        )
         total_evaluated = 0
         total_succeeded = 0
         total_errors = 0
@@ -501,7 +560,10 @@ class EvalRunner:
         seen_ids: set[str] = set()
 
         while True:
-            rows = _fetch_pending_excluding(self.cfg.db_path, self.cfg.batch_size, seen_ids)
+            rows = _fetch_pending_excluding(
+                self.cfg.db_path, self.cfg.batch_size, seen_ids,
+                model=model, subdomain=subdomain,
+            )
             if not rows:
                 break
 
@@ -640,6 +702,25 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         default="data/results.db",
         help="Path to SQLite results DB (default: data/results.db).",
     )
+    p.add_argument(
+        "--target-model",
+        default=None,
+        metavar="TARGET_MODEL",
+        dest="target_model",
+        help=(
+            "Only judge rows where target_model matches this value "
+            "(e.g. claude-haiku-4-5). Ignored when --ids is set."
+        ),
+    )
+    p.add_argument(
+        "--subdomain",
+        default=None,
+        metavar="SUBDOMAIN",
+        help=(
+            "Only judge rows for a specific financial_subdomain "
+            "(e.g. 3a_investment_advice). Ignored when --ids is set."
+        ),
+    )
     return p
 
 
@@ -662,7 +743,11 @@ def main() -> None:
     elif args.all:
         runner.run_all(dry_run=args.dry_run)
     else:
-        runner.run_pending(dry_run=args.dry_run)
+        runner.run_pending(
+            dry_run=args.dry_run,
+            model=args.target_model,
+            subdomain=args.subdomain,
+        )
 
 
 if __name__ == "__main__":
