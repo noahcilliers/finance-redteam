@@ -52,15 +52,29 @@ The judge LLM is always a **different provider** than the model being evaluated 
 
 ```
 finance-redteam/
-├── attacks/          # Attack prompt libraries, organised by category
-├── dashboard/        # Streamlit results dashboard
-├── data/             # Raw results, SQLite/Parquet databases
-├── docs/             # Scope documents, architecture notes, phase write-ups
-├── evaluation/       # Judge LLM rubric and scoring logic
-├── execution/        # Attack runner, API clients, retry logic
-├── redteam-env/      # Python virtual environment (gitignored)
-├── .env              # API keys (gitignored)
-├── .env.example      # Safe template to commit
+├── attacks/library/     # 46 YAML attack seeds (3a/3b/3c + generic)
+├── generation/          # SeedLoader + MutationPromptBuilder (I/O-free)
+├── execution/           # Pipeline runners + async connectors
+│   ├── connectors/        # openai, anthropic, gemini, ollama
+│   ├── pipeline.py        # async orchestrator
+│   ├── deepteam_bridge.py # YAML seed ↔ DeepTeam CustomVulnerability
+│   ├── deepteam_run.py    # DeepTeam-powered CLI entry point
+│   └── run.py             # MutationPromptBuilder CLI entry point
+├── evaluation/          # FinancialSafetyJudge + deterministic pre-pass
+│   ├── judge.py           # Anthropic tool-use, per-subdomain rubrics
+│   ├── eval_runner.py     # async batch scorer
+│   ├── deterministic.py   # PII / system-prompt-echo / harm-keyword detectors
+│   ├── eval_schema.py     # pydantic verdict schema
+│   └── harm_lexicon.yaml  # 3a/3b/3c keyword buckets
+├── dashboard/           # Streamlit app (6 pages)
+├── data/                # models.py, database.py, results.db
+├── runs/                # Per-run JSONL execution logs
+├── scripts/             # One-shot utilities (migrations, replay)
+├── tests/               # pytest unit tests (bridge + deterministic)
+├── docs/                # Scope, phase plans, architecture notes
+├── redteam-env/         # Python virtual environment (gitignored)
+├── .env                 # API keys (gitignored)
+├── .env.example         # Safe template to commit
 └── README.md
 ```
 
@@ -83,28 +97,28 @@ GOOGLE_API_KEY=
 
 ## Project Phases
 
-*Status as of 2026-04-19.*
+*Status as of 2026-04-23.*
 
 | Phase | Description | Status |
 |---|---|---|
 | 0 | Foundation, scope & setup | ✅ Complete |
 | 1 | Architecture design | ✅ Complete |
-| 2 | Attack library construction | ✅ Complete (46 YAML seeds + DeepTeam variants; multi-turn escalation deferred) |
-| 3 | Execution engine | ✅ Complete (async connectors, rate limiter, DeepTeam bridge; 486 runs in `data/results.db`) |
-| 4 | Evaluation & judging | 🟡 In progress — judge + eval_runner built and run; remaining work tracked in `docs/phase-4-completion-plan.md` |
-| 5 | Dashboard & reporting | ⏳ Not started |
-| 6 | Defense layer (optional) | ⏳ Not started |
-| 7 | Feedback loop | 🟡 Partial — rule-based `ResultsAnalyzer` built; evolutionary loop deferred |
+| 2 | Attack library construction | ✅ Complete — 46 YAML seeds (14 × 3a, 17 × 3b, 9 × 3c, 6 generic); multi-turn escalation deferred to v2 |
+| 3 | Execution engine | ✅ Complete — 4 async connectors (OpenAI, Anthropic, Gemini, Ollama), rate limiter, two pipeline entry points (`execution/run.py` MutationPromptBuilder path + `execution/deepteam_run.py` DeepTeam path). 765 runs in `data/results.db` across 24 run logs |
+| 4 | Evaluation & judging | ✅ Complete — `FinancialSafetyJudge` (Anthropic tool-use, per-subdomain rubrics, single-pass + two-pass modes), `EvalRunner` batch scorer, and the deterministic pre-pass (`evaluation/deterministic.py`: SSN/CC/ABA/email PII detection with Luhn validation, system-prompt echo detection, harm-keyword lexicon, length-anomaly baseline). Residual cleanup items listed below |
+| 5 | Dashboard & reporting | ✅ Complete — Streamlit app with 6 pages (overview, heatmap, browser, comparison, live run, judge) wired to the live DB |
+| 6 | Defense layer | ⏳ Not started — next up |
+| 7 | Feedback loop | 🟡 Partial — rule-based `ResultsAnalyzer` built; evolutionary mutation loop deferred |
 | 8 | Write-up & publication | ⏳ Not started |
 
-### Current state of Phase 4
+### Residual cleanup before Phase 6
 
-- `evaluation/judge.py`, `eval_schema.py`, and `eval_runner.py` are all implemented. Judge uses Anthropic tool-use with per-subdomain rubrics (3a / 3b / 3c / generic).
-- 426 of 455 responded rows have been judged. 29 rows from the 2026-04-19 run are still pending.
-- **3c (PII & data leakage) subdomain has never been executed** — 7 seed files exist, 0 rows in DB.
-- **Data quality issue:** 279 of 486 rows carry a `[REFUSAL]` sentinel string as `response_text` rather than a real model response, which flattens the 3b severity distribution to 0.0 across the board. Root-causing this in `execution/deepteam_bridge.py` is the top Phase 4 task.
+The judge and dashboard are working, but the result set has known rough edges. These are maintenance tasks, not blockers for Phase 6 — but closing them out first would make Phase 6 benchmarking cleaner:
 
-See `docs/phase-4-completion-plan.md` for the detailed close-out plan.
+- **REFUSAL sentinel migration unapplied.** 279 of 765 rows carry the `[REFUSAL]` sentinel string as `response_text`. `scripts/migrate_refusal_sentinel.py` is written and idempotent but hasn't been run against the production DB. Running it marks those rows with `error='api_level_refusal'` so downstream eval doesn't score them as 0.0 severity.
+- **334 unjudged rows.** 431 of 765 rows have a judge verdict; the remainder (mostly from the most recent runs) need to be pushed through `eval_runner.py --all`.
+- **3b flat-severity investigation.** The 3b (fraud/scams) severity distribution is flat at ~0.0 across 342 rows. Partially explained by the REFUSAL sentinel issue above; need to re-judge after migration to confirm.
+- **Coverage gaps.** 3c has 98 rows against 9 seeds while 3b has 342 rows against 17 seeds — coverage is uneven. A coverage-matrix report and gap-fill runner are on the agenda before Phase 6 (see project notes on test automation).
 
 ## Cost Estimate
 
