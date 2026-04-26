@@ -61,13 +61,31 @@ inject_styles()
 
 EVAL_MODULE = "evaluation.eval_runner"
 
-KNOWN_JUDGE_MODELS: tuple[str, ...] = (
-    "claude-sonnet-4-6",
-    "claude-haiku-4-5",
-    "claude-opus-4-6",
-    "gpt-4o",
-    "gpt-4o-mini",
-)
+# Judge implementations exposed in the UI. The CLI flag values
+# (claude / gpt4o) match what evaluation.eval_runner expects via --judge.
+JUDGE_OPTIONS: dict[str, dict] = {
+    "claude": {
+        "label": "Claude (Anthropic)",
+        "models": ("claude-sonnet-4-6", "claude-haiku-4-5", "claude-opus-4-6"),
+        "cost_per_row": {"sonnet": 0.003, "haiku": 0.0003, "opus": 0.015},
+        "default_cost": 0.003,
+    },
+    "gpt4o": {
+        "label": "GPT-4o (OpenAI)",
+        "models": ("gpt-4o", "gpt-4o-mini"),
+        "cost_per_row": {"gpt-4o-mini": 0.0004, "gpt-4o": 0.003},
+        "default_cost": 0.003,
+    },
+}
+
+
+def _row_cost_for(judge_key: str, model: str) -> float:
+    """Pick a rough $/row figure for the cost preview."""
+    spec = JUDGE_OPTIONS[judge_key]
+    for needle, price in spec["cost_per_row"].items():
+        if needle in model:
+            return price
+    return spec["default_cost"]
 
 
 # ---------------------------------------------------------------------------
@@ -377,11 +395,23 @@ st.subheader("3 · Judge configuration")
 cfg_col1, cfg_col2, cfg_col3 = st.columns(3)
 
 with cfg_col1:
+    judge_keys = list(JUDGE_OPTIONS.keys())
+    judge_choice = st.selectbox(
+        "Judge implementation",
+        options=judge_keys,
+        index=0,
+        format_func=lambda k: JUDGE_OPTIONS[k]["label"],
+        help=(
+            "Pick which LLM judge to run. Both implementations use the same "
+            "rubric and produce the same JudgeVerdict shape — only the "
+            "underlying model differs."
+        ),
+    )
     judge_model = st.selectbox(
         "Judge model",
-        options=list(KNOWN_JUDGE_MODELS),
+        options=list(JUDGE_OPTIONS[judge_choice]["models"]),
         index=0,
-        help="Anthropic / OpenAI model used as the LLM judge. Sonnet-class models give the best cost/quality balance.",
+        help="Model snapshot used as the judge. Sonnet/4o-class models give the best cost/quality balance.",
     )
 
 with cfg_col2:
@@ -429,8 +459,8 @@ st.subheader("4 · Scope preview")
 
 preview_color = DANGER if scoped_count == 0 else ACCENT
 
-# Cost estimate: sonnet ≈ $0.003/row (2 in/out passes); haiku ≈ $0.0003
-cost_per_row = 0.0003 if "haiku" in judge_model else 0.003
+# Cost estimate is provider-aware (see JUDGE_OPTIONS[...]['cost_per_row']).
+cost_per_row = _row_cost_for(judge_choice, judge_model)
 est_cost = scoped_count * cost_per_row
 est_time_min = max(1, scoped_count * 5 / 60 / max(1, concurrency))  # ~5s/row at concurrency
 
@@ -491,7 +521,8 @@ if launch_clicked and not launch_disabled:
     if two_pass:
         argv.append("--two-pass")
 
-    # Model + scope
+    # Judge implementation + model + scope
+    argv += ["--judge", judge_choice]
     argv += ["--model", judge_model]
     argv += ["--batch-size", str(int(batch_size))]
     argv += ["--concurrency", str(int(concurrency))]

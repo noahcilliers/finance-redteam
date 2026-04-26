@@ -143,9 +143,11 @@ def _parse_args() -> argparse.Namespace:
         "--no-enhancers",
         action="store_true",
         help=(
-            "Skip DeepTeam attack enhancers (PromptInjection/SystemOverride). "
-            "Uses the simulator's raw variants only. "
-            "Only relevant for --mode simulator."
+            "Skip DeepTeam attack enhancers. "
+            "In --mode simulator this drops PromptInjection/SystemOverride so "
+            "only the simulator's raw variants are sent. "
+            "In --mode library-faithful this implies --no-llm-enhancers (the "
+            "deterministic Base64/ROT13/Leetspeak encoders still run)."
         ),
     )
     p.add_argument(
@@ -718,7 +720,11 @@ async def run_deepteam_pipeline(
             evaluation_model=evaluation_model,
             max_concurrent=concurrency,
             target_rps=effective_rps,
-            include_llm_enhancers=not no_llm_enhancers,
+            # --no-enhancers is the superset of --no-llm-enhancers: either flag
+            # disables the LLM-based enhancers in library-faithful mode. The
+            # deterministic encoders (Base64/ROT13/Leetspeak) still run — to
+            # suppress those too, edit dispatch_enhancers in deepteam_bridge.
+            include_llm_enhancers=not (no_llm_enhancers or no_enhancers),
             seeds_by_id=seeds_by_id,
         )
 

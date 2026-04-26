@@ -41,6 +41,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from functools import lru_cache
 from typing import Any, Callable, Optional
 
 from deepteam.attacks.base_attack import BaseAttack
@@ -444,6 +445,45 @@ def _enhancer_label(enhancer: BaseAttack) -> str:
         return enhancer.__class__.__name__
 
 
+# Cap on the number of completion tokens the LLM-based enhancers are allowed
+# to emit per call. DeepTeam's enhancers (Multilingual / PromptInjection /
+# Roleplay / SystemOverride / AuthorityEscalation) do schema-bound generation
+# via `simulator_model`. When that argument is a bare model-name string,
+# deepeval builds a GPTModel with no max_tokens cap, so gpt-4o-mini will
+# happily run a structured-output spin up to its 16,384-token output ceiling
+# before deepeval fails with:
+#   "Could not parse response content as the length limit was reached"
+# 1024 is comfortably above the legitimate output size of every enhancer in
+# use here (a single rephrased prompt plus short compliance/IsTranslation
+# /IsRoleplay JSON blobs) and well below the hard ceiling where the crash
+# lives.
+ENHANCER_MAX_TOKENS = 1024
+
+
+@lru_cache(maxsize=8)
+def _capped_simulator_model(model_name: str):
+    """
+    Return a deepeval GPTModel pre-configured with a completion-token cap.
+
+    Passing this instance (rather than a raw string) as ``simulator_model=``
+    into an enhancer's ``a_enhance`` is how we propagate the cap down into
+    ``client.beta.chat.completions.parse`` / ``.create``: ``GPTModel`` spreads
+    ``generation_kwargs`` into every OpenAI call, so ``max_tokens`` arrives at
+    the wire. ``initialize_model`` inside each enhancer is a pass-through when
+    it already receives a ``DeepEvalBaseLLM``, so the instance is used
+    verbatim.
+
+    Cached per model name so we don't re-read settings / rebuild the OpenAI
+    client on every concurrent enhancer call.
+    """
+    from deepeval.models import GPTModel
+
+    return GPTModel(
+        model=model_name,
+        generation_kwargs={"max_tokens": ENHANCER_MAX_TOKENS},
+    )
+
+
 async def _apply_enhancer(
     enhancer: BaseAttack,
     attack: str,
@@ -463,6 +503,10 @@ async def _apply_enhancer(
     We detect the signature once, so we don't rely on catching a TypeError
     each call (that pattern also masks genuine bugs in deterministic
     enhancers that happen to raise TypeError for other reasons).
+
+    For the LLM branch we hand the enhancer a ``_capped_simulator_model``
+    GPTModel instance instead of the bare model-name string — see
+    ``ENHANCER_MAX_TOKENS`` for why.
     """
     import inspect
 
@@ -484,7 +528,8 @@ async def _apply_enhancer(
 
     try:
         if accepts_simulator:
-            return await enhancer.a_enhance(attack, simulator_model=simulator_model)
+            capped_model = _capped_simulator_model(simulator_model)
+            return await enhancer.a_enhance(attack, simulator_model=capped_model)
         return await enhancer.a_enhance(attack)
     except Exception as e:
         logger.warning(
@@ -499,6 +544,7 @@ async def build_seed_test_cases(
     *,
     simulator_model: str = "gpt-4o-mini",
     include_llm_enhancers: bool = True,
+    max_concurrent_enhancers: int = 5,
 ) -> list[RTTestCase]:
     """
     Library-faithful test-case synthesis.
@@ -517,6 +563,12 @@ async def build_seed_test_cases(
     assembly) treat these like any other simulated test case — and lets
     our `testcase_to_attack_result` rehydrate seed metadata via the
     vulnerability name.
+
+    `max_concurrent_enhancers` caps the total number of simultaneous LLM
+    enhancer calls across ALL seeds. Without this, a burst of 40-50
+    concurrent calls to the same OpenAI endpoint (e.g. when the target is
+    also gpt-4o-mini) can stall individual requests past DeepEval's
+    per-attempt timeout (DEEPEVAL_PER_ATTEMPT_TIMEOUT_SECONDS_OVERRIDE).
     """
     if len(seeds) != len(vulnerabilities):
         raise ValueError(
@@ -524,10 +576,40 @@ async def build_seed_test_cases(
             f"{len(seeds)} vs {len(vulnerabilities)}"
         )
 
+    # Global semaphore — shared across all seeds so the total number of
+    # in-flight LLM enhancer calls never exceeds the cap.
+    enhancer_sem = asyncio.Semaphore(max_concurrent_enhancers)
+
+    async def _apply_with_cap(enhancer, prompt, sim_model):
+        async with enhancer_sem:
+            return await _apply_enhancer(enhancer, prompt, sim_model)
+
     test_cases: list[RTTestCase] = []
 
     for seed, vuln in zip(seeds, vulnerabilities):
         prompt = (seed.get("prompt") or "").strip()
+
+        # Multi-turn seeds (e.g. character_capture) store their attack as
+        # `conversation_turns` instead of a flat `prompt`.  Synthesise a
+        # single-turn prompt from the *last* user turn so these seeds can
+        # still be run through the single-turn enhancer pipeline.  The full
+        # turn sequence is preserved in `seed['conversation_turns']` for any
+        # future multi-turn connector that wants to replay it verbatim.
+        if not prompt:
+            turns = seed.get("conversation_turns") or []
+            user_turns = [
+                t.get("content", "").strip()
+                for t in turns
+                if isinstance(t, dict) and t.get("role") == "user"
+            ]
+            if user_turns:
+                prompt = user_turns[-1]
+                logger.info(
+                    "Seed %s has no top-level prompt; using last user turn "
+                    "(%d chars) as single-turn proxy",
+                    seed.get("id"), len(prompt),
+                )
+
         if not prompt:
             logger.warning("Seed %s has no prompt; skipping", seed.get("id"))
             continue
@@ -554,7 +636,7 @@ async def build_seed_test_cases(
             continue
 
         enhanced_results = await asyncio.gather(
-            *(_apply_enhancer(e, prompt, simulator_model) for e in enhancers),
+            *(_apply_with_cap(e, prompt, simulator_model) for e in enhancers),
             return_exceptions=False,
         )
 

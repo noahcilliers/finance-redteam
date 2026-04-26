@@ -1,4 +1,4 @@
-"""Model Comparison page — sonnet vs haiku, with room to grow."""
+"""Model Comparison page — side-by-side ASR / severity across target models."""
 
 from __future__ import annotations
 
@@ -32,7 +32,12 @@ from utils.styles import (  # noqa: E402
 
 inject_styles()
 
-COMPARE_MODELS = ("claude-sonnet-4-6", "claude-haiku-4-5")
+COMPARE_MODELS = (
+    "claude-sonnet-4-6",
+    "claude-haiku-4-5",
+    "gpt-4o",
+    "gpt-4o-mini",
+)
 
 st.title("Model Comparison")
 st.caption("Side-by-side view of how each target model holds up against the current attack library.")
@@ -40,8 +45,11 @@ st.caption("Side-by-side view of how each target model holds up against the curr
 # --- Data coverage warning --------------------------------------------------
 
 st.warning(
-    "**Data coverage note:** haiku-4-5 was run only against 3b (fraud) and 3c (PII) subdomains. "
-    "sonnet-4-6 covers all subdomains. Direct comparison is only valid for 3b and 3c."
+    "**Data coverage note:** coverage varies by model. "
+    "sonnet-4-6 and gpt-4o cover all three subdomains; "
+    "haiku-4-5 was run only against 3b (fraud) and 3c (PII); "
+    "gpt-4o-mini coverage is partial. Direct cross-model comparison is most "
+    "reliable on 3b and 3c."
 )
 
 # --- Model summary cards ----------------------------------------------------
@@ -50,10 +58,10 @@ summary_df = load_model_summary()
 summary_df = summary_df[summary_df["target_model"].isin(COMPARE_MODELS)].copy()
 
 if summary_df.empty:
-    st.error("No data for sonnet-4-6 or haiku-4-5.")
+    st.error(f"No data for any of: {', '.join(COMPARE_MODELS)}.")
     st.stop()
 
-# Align ordering so the columns always show sonnet first, haiku second.
+# Align ordering so the columns always render in COMPARE_MODELS order.
 order_key = {m: i for i, m in enumerate(COMPARE_MODELS)}
 summary_df["__order"] = summary_df["target_model"].map(order_key)
 summary_df = summary_df.sort_values("__order").drop(columns="__order")
@@ -113,7 +121,7 @@ tech_long = load_technique_by_model_for_subdomains(shared_subdomains, COMPARE_MO
 if tech_long.empty:
     st.info("No technique data available for shared subdomains yet.")
 else:
-    # Pivot to side-by-side layout.
+    # Pivot to side-by-side layout, one column-pair per model.
     pivot = tech_long.pivot_table(
         index="technique",
         columns="target_model",
@@ -121,65 +129,80 @@ else:
         aggfunc="first",
     )
 
-    # Flatten column index.
-    def _get(series_like, default=0):
+    def _int(value, default=0):
         try:
-            return int(series_like) if not pd.isna(series_like) else default
+            return int(value) if not pd.isna(value) else default
+        except (ValueError, TypeError):
+            return default
+
+    def _float(value, default=0.0):
+        try:
+            return float(value) if pd.notna(value) else default
         except (ValueError, TypeError):
             return default
 
     rows = []
     for technique in pivot.index:
-        sonnet_attempts = _get(pivot.loc[technique, ("attempts", "claude-sonnet-4-6")]
-                               if ("attempts", "claude-sonnet-4-6") in pivot.columns else 0)
-        sonnet_asr = (
-            pivot.loc[technique, ("asr", "claude-sonnet-4-6")]
-            if ("asr", "claude-sonnet-4-6") in pivot.columns
-            else None
-        )
-        haiku_attempts = _get(pivot.loc[technique, ("attempts", "claude-haiku-4-5")]
-                              if ("attempts", "claude-haiku-4-5") in pivot.columns else 0)
-        haiku_asr = (
-            pivot.loc[technique, ("asr", "claude-haiku-4-5")]
-            if ("asr", "claude-haiku-4-5") in pivot.columns
-            else None
-        )
+        row = {"Technique": technique}
+        per_model_attempts = {}
+        per_model_asr = {}
+        for model in COMPARE_MODELS:
+            label = MODEL_SHORT.get(model, model)
+            attempts = _int(
+                pivot.loc[technique, ("attempts", model)]
+                if ("attempts", model) in pivot.columns
+                else 0
+            )
+            asr = _float(
+                pivot.loc[technique, ("asr", model)]
+                if ("asr", model) in pivot.columns
+                else None
+            )
+            per_model_attempts[model] = attempts
+            per_model_asr[model] = asr
+            row[f"{label} Attempts"] = attempts
+            # Show empty cell (None) instead of 0% when the model never ran
+            # this technique — keeps "untouched" visually distinct from "0%".
+            row[f"{label} ASR"] = asr if attempts > 0 else None
+
         # Only show techniques with ≥ 3 attempts in at least one model column.
-        if sonnet_attempts < 3 and haiku_attempts < 3:
+        if max(per_model_attempts.values(), default=0) < 3:
             continue
-        rows.append(
-            {
-                "Technique": technique,
-                "Sonnet Attempts": sonnet_attempts,
-                "Sonnet ASR": float(sonnet_asr) if pd.notna(sonnet_asr) else 0.0,
-                "Haiku Attempts": haiku_attempts,
-                "Haiku ASR": float(haiku_asr) if pd.notna(haiku_asr) else 0.0,
-            }
-        )
+        # Average ASR across models that had any attempts (avoids dragging the
+        # row down when one model never ran the technique).
+        scored = [
+            per_model_asr[m]
+            for m in COMPARE_MODELS
+            if per_model_attempts[m] > 0
+        ]
+        row["__avg_asr"] = sum(scored) / len(scored) if scored else 0.0
+        rows.append(row)
 
     if not rows:
-        st.info("No techniques meet the ≥ 3-attempt threshold in either model.")
+        st.info("No techniques meet the ≥ 3-attempt threshold in any model.")
     else:
-        breakdown_df = pd.DataFrame(rows)
-        breakdown_df["__avg_asr"] = (
-            breakdown_df["Sonnet ASR"] + breakdown_df["Haiku ASR"]
-        ) / 2
         breakdown_df = (
-            breakdown_df.sort_values("__avg_asr", ascending=False)
+            pd.DataFrame(rows)
+            .sort_values("__avg_asr", ascending=False)
             .drop(columns="__avg_asr")
             .reset_index(drop=True)
         )
+        column_config = {
+            "Technique": st.column_config.TextColumn("Technique"),
+        }
+        for model in COMPARE_MODELS:
+            label = MODEL_SHORT.get(model, model)
+            column_config[f"{label} Attempts"] = st.column_config.NumberColumn(
+                f"{label} Attempts", format="%d"
+            )
+            column_config[f"{label} ASR"] = st.column_config.NumberColumn(
+                f"{label} ASR", format="%.0f%%"
+            )
         st.dataframe(
             breakdown_df,
             use_container_width=True,
             hide_index=True,
-            column_config={
-                "Technique": st.column_config.TextColumn("Technique"),
-                "Sonnet Attempts": st.column_config.NumberColumn("Sonnet Attempts", format="%d"),
-                "Sonnet ASR": st.column_config.NumberColumn("Sonnet ASR", format="%.0f%%"),
-                "Haiku Attempts": st.column_config.NumberColumn("Haiku Attempts", format="%d"),
-                "Haiku ASR": st.column_config.NumberColumn("Haiku ASR", format="%.0f%%"),
-            },
+            column_config=column_config,
         )
 
 st.divider()
@@ -191,6 +214,6 @@ st.caption("Successful attacks only (success = 1). Overlay uses 60% opacity per 
 
 sev_df = load_severity_by_model(COMPARE_MODELS)
 if sev_df.empty:
-    st.info("No successful attacks recorded for either model.")
+    st.info("No successful attacks recorded for any of the compared models.")
 else:
     st.plotly_chart(severity_overlay_histogram(sev_df), use_container_width=True)

@@ -58,7 +58,12 @@ from evaluation.deterministic import (
     deterministic_pass,
 )
 from evaluation.eval_schema import EvaluationInput
-from evaluation.judge import FinancialSafetyJudge, JudgeConfig
+from evaluation.judge import (
+    DEFAULT_MODELS,
+    FinancialSafetyJudge,
+    JudgeConfig,
+    build_judge,
+)
 
 
 # ---------------------------------------------------------------
@@ -67,6 +72,8 @@ from evaluation.judge import FinancialSafetyJudge, JudgeConfig
 
 @dataclass
 class EvalRunnerConfig:
+    # "anthropic" → Claude judge, "openai" → GPT-4o judge.
+    judge_provider: str = "anthropic"
     judge_model: str = "claude-sonnet-4-6"
     batch_size: int = 20
     max_concurrent: int = 2         # keep low — 30k TPM rate limit bites fast
@@ -519,12 +526,13 @@ class EvalRunner:
         from data.database import init_db
         init_db()
         judge_cfg = JudgeConfig(
+            provider=cfg.judge_provider,
             model=cfg.judge_model,
             fast_mode=cfg.fast_mode,
             rubric_version=cfg.rubric_version,
             api_key=cfg.api_key,
         )
-        self.judge = FinancialSafetyJudge(judge_cfg)
+        self.judge = build_judge(judge_cfg)
 
     # ---- Public entry points ----------------------------------------
 
@@ -681,9 +689,23 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         help="Use two-pass evaluation (binary pre-filter, cheaper for mostly-refused runs).",
     )
     p.add_argument(
+        "--judge",
+        choices=["claude", "gpt4o"],
+        default="claude",
+        help=(
+            "Which judge implementation to use. "
+            "'claude' (default) uses Anthropic Claude Sonnet; "
+            "'gpt4o' uses OpenAI GPT-4o with the same rubric."
+        ),
+    )
+    p.add_argument(
         "--model",
-        default="claude-sonnet-4-6",
-        help="Anthropic model string for the judge (default: claude-sonnet-4-6).",
+        default=None,
+        help=(
+            "Override the judge model string. "
+            "Defaults to claude-sonnet-4-6 for --judge claude, "
+            "or gpt-4o for --judge gpt4o."
+        ),
     )
     p.add_argument(
         "--batch-size",
@@ -728,8 +750,14 @@ def main() -> None:
     parser = _build_arg_parser()
     args = parser.parse_args()
 
+    # --judge claude  → provider=anthropic, default model claude-sonnet-4-6
+    # --judge gpt4o   → provider=openai,    default model gpt-4o
+    provider = "openai" if args.judge == "gpt4o" else "anthropic"
+    model = args.model or DEFAULT_MODELS[provider]
+
     cfg = EvalRunnerConfig(
-        judge_model=args.model,
+        judge_provider=provider,
+        judge_model=model,
         batch_size=args.batch_size,
         max_concurrent=args.concurrency,
         fast_mode=not args.two_pass,

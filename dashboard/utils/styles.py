@@ -19,8 +19,10 @@ ACCENT = "#3D5A80"         # primary chart fill (slate blue)
 
 # Model-specific chart colors (used across comparison page)
 MODEL_COLORS = {
-    "claude-sonnet-4-6": ACCENT,
-    "claude-haiku-4-5": "#8B7355",  # warm brown
+    "claude-sonnet-4-6": ACCENT,         # slate blue
+    "claude-haiku-4-5": "#8B7355",       # warm brown
+    "gpt-4o": "#2D6A4F",                 # green (matches SUCCESS token)
+    "gpt-4o-mini": "#7FA88B",            # lighter sage
 }
 
 # --- Subdomain display labels -----------------------------------------------
@@ -43,6 +45,7 @@ MODEL_SHORT = {
     "claude-sonnet-4-6": "sonnet",
     "claude-haiku-4-5": "haiku",
     "gpt-4o": "gpt-4o",
+    "gpt-4o-mini": "gpt-4o-mini",
 }
 
 

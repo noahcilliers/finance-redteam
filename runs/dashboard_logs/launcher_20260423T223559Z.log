@@ -1,0 +1,18 @@
+# Launched 20260423T223559Z UTC
+# argv: /Users/noahcilliers/finance-redteam/redteam-env/bin/python3.13 -u -m execution.deepteam_run --config /Users/noahcilliers/finance-redteam/runs/dashboard_configs/run_20260423T223559Z.yaml --target gpt-4o-mini --mode library-faithful --simulator gpt-4o-mini --evaluator gpt-4o-mini --attacks-per-type 5 --max-concurrent 3 --rpm 48
+
+15:36:02  INFO      __main__  Config loaded | seed_filters={'financial_subdomain': ['3a_investment_advice', '3b_fraud_and_scams', '3c_pii_and_data_leakage'], 'tags_none': ['requires_system_prompt', 'requires_rag_fixture'], 'attack_type': ['jailbreak', 'encoding_obfuscation'], 'min_severity': 1, 'max_severity': 10} | target=gpt-4o-mini
+15:36:02  INFO      __main__  Loaded 9 seed(s): enc_base64_001, enc_homoglyph_001, enc_leetspeak_001, enc_token_smuggling_001, jb_char_capture_001, jb_hypothetical_academic_001, jb_hypothetical_novel_001, jb_roleplay_advisor_001, jb_roleplay_future_001
+15:36:02  INFO      __main__  Target connector ready | model=gpt-4o-mini | system_prompt=none
+15:36:02  INFO      __main__  library-faithful mode | building seed test cases | include_llm_enhancers=True | simulator=gpt-4o-mini
+
+
+
+
+15:36:58  WARNING   execution.deepteam_bridge  Seed jb_char_capture_001 has no prompt; skipping
+
+
+
+15:38:53  ERROR     deepeval.retry.openai  call timed out after 88.5s (per attempt). Increase DEEPEVAL_PER_ATTEMPT_TIMEOUT_SECONDS_OVERRIDE (None disables) or reduce work per attempt. Retrying: 1 time(s)...
+15:38:53  INFO      deepeval.retry.openai  Retrying in 2.677120486203332 s (attempt 1) after TimeoutError('call timed out after 88.5s (per attempt). Increase DEEPEVAL_PER_ATTEMPT_TIMEOUT_SECONDS_OVERRIDE (None disables) or reduce work per attempt.')
+

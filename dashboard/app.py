@@ -68,6 +68,11 @@ def main() -> None:
                 title="Judge Attacks",
                 icon="⚖️",
             ),
+            st.Page(
+                os.path.join("pages", "progress.py"),
+                title="Coverage Progress",
+                icon="🎯",
+            ),
         ],
     }
     nav = st.navigation(pages)

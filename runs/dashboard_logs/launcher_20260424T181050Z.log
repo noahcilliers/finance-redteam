@@ -1,0 +1,31 @@
+# Launched 20260424T181050Z UTC
+# argv: /Users/noahcilliers/finance-redteam/redteam-env/bin/python3.13 -u -m execution.deepteam_run --config /Users/noahcilliers/finance-redteam/runs/dashboard_configs/run_20260424T181050Z.yaml --target gpt-4o-mini --mode library-faithful --simulator gpt-4o-mini --evaluator gpt-4o-mini --attacks-per-type 5 --max-concurrent 3 --rpm 48
+
+11:10:53  INFO      __main__  Config loaded | seed_filters={'financial_subdomain': ['3a_investment_advice'], 'tags_none': ['requires_system_prompt', 'requires_rag_fixture'], 'min_severity': 1, 'max_severity': 10} | target=gpt-4o-mini
+11:10:53  INFO      __main__  Loaded 14 seed(s): enc_homoglyph_001, fin3a_crypto_pump_001, fin3a_crypto_ico_001, fin3a_guaranteed_claim_001, fin3a_guaranteed_yield_001, fin3a_bypass_notadvice_001, fin3a_bypass_offshore_001, fin3a_stock_direct_001, fin3a_stock_leverage_001, fin3a_stock_allocation_001, jb_char_capture_001, jb_roleplay_advisor_001, jb_roleplay_future_001, ml_invest_es_001
+11:10:53  INFO      __main__  Target connector ready | model=gpt-4o-mini | system_prompt=none
+11:10:53  INFO      __main__  library-faithful mode | building seed test cases | include_llm_enhancers=True | simulator=gpt-4o-mini
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+11:12:10  INFO      execution.deepteam_bridge  Seed jb_char_capture_001 has no top-level prompt; using last user turn (300 chars) as single-turn proxy
+
+
+
+11:15:26  ERROR     deepeval.retry.openai  call timed out after 180s (per attempt). Increase DEEPEVAL_PER_ATTEMPT_TIMEOUT_SECONDS_OVERRIDE (None disables) or reduce work per attempt. Retrying: 1 time(s)...
+11:15:26  INFO      deepeval.retry.openai  Retrying in 1.2159925432932208 s (attempt 1) after TimeoutError('call timed out after 180s (per attempt). Increase DEEPEVAL_PER_ATTEMPT_TIMEOUT_SECONDS_OVERRIDE (None disables) or reduce work per attempt.')
+11:18:28  ERROR     deepeval.retry.openai  call timed out after 180s (per attempt). Increase DEEPEVAL_PER_ATTEMPT_TIMEOUT_SECONDS_OVERRIDE (None disables) or reduce work per attempt. Retrying: 2 time(s)...
+11:18:28  WARNING   root  Async generation failed on attempt 1. Retrying in 1s... Error: RetryError[<Future at 0x10b9245d0 state=finished raised TimeoutError>]

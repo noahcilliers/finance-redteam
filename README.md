@@ -113,12 +113,20 @@ GOOGLE_API_KEY=
 
 ### Residual cleanup before Phase 6
 
-The judge and dashboard are working, but the result set has known rough edges. These are maintenance tasks, not blockers for Phase 6 — but closing them out first would make Phase 6 benchmarking cleaner:
+Re-checked 2026-04-23 with the production DB. Earlier audit had stale info; current picture:
 
-- **REFUSAL sentinel migration unapplied.** 279 of 765 rows carry the `[REFUSAL]` sentinel string as `response_text`. `scripts/migrate_refusal_sentinel.py` is written and idempotent but hasn't been run against the production DB. Running it marks those rows with `error='api_level_refusal'` so downstream eval doesn't score them as 0.0 severity.
-- **334 unjudged rows.** 431 of 765 rows have a judge verdict; the remainder (mostly from the most recent runs) need to be pushed through `eval_runner.py --all`.
-- **3b flat-severity investigation.** The 3b (fraud/scams) severity distribution is flat at ~0.0 across 342 rows. Partially explained by the REFUSAL sentinel issue above; need to re-judge after migration to confirm.
-- **Coverage gaps.** 3c has 98 rows against 9 seeds while 3b has 342 rows against 17 seeds — coverage is uneven. A coverage-matrix report and gap-fill runner are on the agenda before Phase 6 (see project notes on test automation).
+- **REFUSAL sentinel migration — already applied.** Dry-run of `scripts/migrate_refusal_sentinel.py` reports 0 rows matching `response_text = '[REFUSAL]'`. Translated rows correctly carry `error='api_level_refusal'` and empty response text.
+- **Judgment "backlog" — not a real backlog.** 431 of 765 rows have a verdict; the other 334 have empty `response_text` (they're the api_level_refusal cohort). `eval_runner.py`'s `_JUDGEABLE_WHERE` filter correctly excludes them — there's nothing to score. A dry-run reports "Nothing to evaluate." as expected.
+- **Real coverage gap — target model breadth.** The DB only covers 3 target models: `claude-haiku-4-5`, `claude-sonnet-4-6`, `gpt-4o`. The README's target list (Gemini 2.5 Pro/Flash, GPT-3.5, Llama 2) has zero runs. GPT-4o has only 1 of 19 (attack_type × technique) combos covered. This is where the pre-Phase-6 coverage sweep needs to spend its API budget.
+- **3b flat-severity investigation.** Still open, but now cleanly isolated: the sentinel cohort isn't the cause (it's been migrated out). Something about the 3b rubric or the 17 seeds in 3b is pinning scores low. Worth a manual spot-check of 5-10 judged 3b rows before touching the rubric.
+
+### Coverage bar (pinned 2026-04-23)
+
+Coverage of the `(seed × enhancer × target_model)` matrix uses a split threshold:
+- **Headline cells** — per-target × per-subdomain top-line ASR cells quoted in the final write-up: **N ≥ 5 runs** per cell (enough for a confidence interval).
+- **Exhaustive library coverage** — every other cell across the full matrix: **N ≥ 1 run** per cell (yes/no "did we try this").
+
+The coverage report (to be built) will check both thresholds independently and flag gaps under either.
 
 ## Cost Estimate
 

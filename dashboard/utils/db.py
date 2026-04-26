@@ -593,3 +593,84 @@ def load_judge_status() -> dict:
 
 # Expose the cache-key helper so pages can use it when calling cached loaders.
 filters_cache_key = _filters_cache_key
+
+
+# --- Coverage Progress page --------------------------------------------------
+
+# §5.1 — a run is "valid" if it meets the judged-response criteria OR if the
+# provider API itself blocked generation (api_level_refusal). API-level
+# refusals are first-class safety outcomes — the provider's built-in filter
+# caught the attack before any text was produced — and should count toward
+# coverage so runs against different providers can be compared fairly.
+#
+# Judged-response arm: non-empty response + judge reasoning + no error +
+#   non-null severity (the stricter §1.1 filter from the original spec).
+# API-refusal arm: error = 'api_level_refusal' (set by deepteam_bridge when
+#   the connector returns the [REFUSAL] sentinel).
+_VALID_RUN_WHERE = (
+    "("
+    "(response_text IS NOT NULL AND response_text != '' "
+    " AND judge_reasoning IS NOT NULL AND judge_reasoning != '' "
+    " AND (error IS NULL OR error = '') "
+    " AND severity_score IS NOT NULL)"
+    " OR error = 'api_level_refusal'"
+    ")"
+)
+
+
+@st.cache_data(ttl=60)
+def load_cell_coverage() -> pd.DataFrame:
+    """Valid run counts grouped by (target_model, attack_technique, financial_subdomain).
+
+    "Valid" means either a fully judged response (non-empty response_text +
+    judge_reasoning + severity_score, no error) OR an API-level refusal
+    (error = 'api_level_refusal'). Both represent real, meaningful test
+    outcomes and contribute to coverage.
+
+    Returns long-format with: target_model, attack_technique, financial_subdomain,
+    valid_count. Rows with zero valid runs are NOT returned — the page joins
+    against the applicability matrix from utils.coverage to fill them in.
+
+    NULL-subdomain rows are excluded because they can't be assigned to a
+    (technique, subdomain) cell.
+    """
+    sql = f"""
+        SELECT target_model,
+               attack_technique,
+               financial_subdomain,
+               COUNT(*) AS valid_count,
+               SUM(CASE WHEN error = 'api_level_refusal' THEN 1 ELSE 0 END) AS refusal_count
+        FROM attack_results
+        WHERE {_VALID_RUN_WHERE}
+          AND target_model IS NOT NULL
+          AND attack_technique IS NOT NULL
+          AND financial_subdomain IS NOT NULL
+        GROUP BY target_model, attack_technique, financial_subdomain
+    """
+    with _connect() as con:
+        df = pd.read_sql(sql, con)
+    df["valid_count"] = df["valid_count"].fillna(0).astype(int)
+    df["refusal_count"] = df["refusal_count"].fillna(0).astype(int)
+    return df
+
+
+@st.cache_data(ttl=60)
+def load_runs_per_day(days: int = 7) -> float:
+    """Average valid runs per day over the last `days` days, derived from timestamp.
+
+    Returns 0.0 if no valid rows fall in the window — keeps the banner finite
+    even on a fresh DB.
+    """
+    sql = f"""
+        SELECT COUNT(*) AS n
+        FROM attack_results
+        WHERE {_VALID_RUN_WHERE}
+          AND timestamp >= datetime('now', ?)
+    """
+    with _connect() as con:
+        cur = con.cursor()
+        cur.execute(sql, (f"-{days} days",))
+        n = cur.fetchone()[0] or 0
+    if not n or days <= 0:
+        return 0.0
+    return float(n) / float(days)
