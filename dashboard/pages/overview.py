@@ -100,13 +100,14 @@ else:
     st.markdown(
         f"""
         <div style="
-            background-color: {SURFACE};
-            border: 1px solid #D4D0C8;
-            border-left: 4px solid #B83232;
+            background-color: var(--color-surface);
+            border: 1px solid var(--color-border);
+            border-left: 4px solid var(--color-danger);
             border-radius: 6px;
             padding: 10px 14px;
             margin-bottom: 10px;
-            font-size: 14px;">
+            font-size: 14px;
+            color: var(--color-text);">
             <strong>Top technique:</strong> <code>{top_row['Technique']}</code>
             &nbsp;·&nbsp; ASR <strong>{top_row['ASR']:.0%}</strong>
             &nbsp;·&nbsp; {int(top_row['Successes'])} / {int(top_row['Attempts'])} attempts

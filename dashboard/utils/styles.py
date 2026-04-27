@@ -1,59 +1,94 @@
 """Design-system tokens and CSS injection for the red-team dashboard.
 
-Single source of truth for the palette. Import tokens from here (or from
-utils.charts, which re-exports them) so pages never hard-code hex values.
+Theming is controlled via st.session_state["dark_mode"] (bool, default False).
+inject_styles() reads that flag on every page render and emits the correct
+CSS custom properties. All inline HTML in pages should use var(--color-*)
+so they automatically pick up the active theme.
+
+Module-level constants (CREAM, SURFACE, etc.) remain as light-mode values
+for Plotly chart builders that need raw hex. Use get_palette() for anything
+that must respond to theme switches at runtime.
 """
 
 import streamlit as st
 
-# --- Palette -----------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Palette definitions
+# ---------------------------------------------------------------------------
 
-CREAM = "#F7F4EF"          # page background
-SURFACE = "#EEEBE4"        # cards / sidebar / inputs
-TEXT_PRIMARY = "#1A1A1A"   # body text, numbers
-TEXT_MUTED = "#5A5A5A"     # labels, captions
-BORDER = "#D4D0C8"         # dividers, card outlines
-SUCCESS = "#2D6A4F"        # pass / low severity (dark green)
-DANGER = "#B83232"         # fail / high severity (muted red)
-ACCENT = "#3D5A80"         # primary chart fill (slate blue)
+_LIGHT: dict[str, str] = {
+    "bg":      "#F7F4EF",   # creamy page background
+    "surface": "#EEEBE4",   # cards, sidebar, inputs
+    "text":    "#1A1A1A",   # primary body text
+    "muted":   "#5A5A5A",   # labels, captions
+    "border":  "#D4D0C8",   # dividers, outlines
+    "success": "#2D6A4F",   # pass / low severity
+    "danger":  "#B83232",   # fail / high severity
+    "accent":  "#3D5A80",   # primary chart fill
+}
+
+_DARK: dict[str, str] = {
+    "bg":      "#111111",
+    "surface": "#1C1C1C",
+    "text":    "#DEDEDE",
+    "muted":   "#888888",
+    "border":  "#2C2C2C",
+    "success": "#3A9B6A",
+    "danger":  "#D44545",
+    "accent":  "#6B9CC4",
+}
+
+# ---------------------------------------------------------------------------
+# Light-mode module constants (kept for Plotly builders + backward compat)
+# ---------------------------------------------------------------------------
+
+CREAM        = _LIGHT["bg"]
+SURFACE      = _LIGHT["surface"]
+TEXT_PRIMARY = _LIGHT["text"]
+TEXT_MUTED   = _LIGHT["muted"]
+BORDER       = _LIGHT["border"]
+SUCCESS      = _LIGHT["success"]
+DANGER       = _LIGHT["danger"]
+ACCENT       = _LIGHT["accent"]
 
 # Model-specific chart colors (used across comparison page)
-MODEL_COLORS = {
-    "claude-sonnet-4-6": ACCENT,         # slate blue
-    "claude-haiku-4-5": "#8B7355",       # warm brown
-    "gpt-4o": "#2D6A4F",                 # green (matches SUCCESS token)
-    "gpt-4o-mini": "#7FA88B",            # lighter sage
+MODEL_COLORS: dict[str, str] = {
+    "claude-sonnet-4-6": "#3D5A80",
+    "claude-haiku-4-5":  "#8B7355",
+    "gpt-4o":            "#2D6A4F",
+    "gpt-4o-mini":       "#7FA88B",
 }
 
-# --- Subdomain display labels -----------------------------------------------
+# ---------------------------------------------------------------------------
+# Subdomain / model labels
+# ---------------------------------------------------------------------------
 
-SUBDOMAIN_LABELS = {
-    "3a_investment_advice": "Investment Advice (3a)",
-    "3b_fraud_and_scams": "Fraud & Scams (3b)",
+SUBDOMAIN_LABELS: dict = {
+    "3a_investment_advice":    "Investment Advice (3a)",
+    "3b_fraud_and_scams":      "Fraud & Scams (3b)",
     "3c_pii_and_data_leakage": "PII Leakage (3c)",
-    None: "Generic / Cross-domain",
+    None:                      "Generic / Cross-domain",
 }
 
-SUBDOMAIN_SHORT = {
-    "3a_investment_advice": "3a Invest.",
-    "3b_fraud_and_scams": "3b Fraud",
+SUBDOMAIN_SHORT: dict = {
+    "3a_investment_advice":    "3a Invest.",
+    "3b_fraud_and_scams":      "3b Fraud",
     "3c_pii_and_data_leakage": "3c PII",
-    None: "Generic",
+    None:                      "Generic",
 }
 
-MODEL_SHORT = {
+MODEL_SHORT: dict[str, str] = {
     "claude-sonnet-4-6": "sonnet",
-    "claude-haiku-4-5": "haiku",
-    "gpt-4o": "gpt-4o",
-    "gpt-4o-mini": "gpt-4o-mini",
+    "claude-haiku-4-5":  "haiku",
+    "gpt-4o":            "gpt-4o",
+    "gpt-4o-mini":       "gpt-4o-mini",
 }
 
 
 def subdomain_label(value, short: bool = False) -> str:
     """Translate a raw subdomain value (possibly None/NaN/empty) to a friendly label."""
-    # Treat NaN, None, and empty string as the generic/cross-domain bucket.
     try:
-        is_nan = isinstance(value, float) and value != value  # NaN != NaN
+        is_nan = isinstance(value, float) and value != value
     except Exception:
         is_nan = False
     if value in ("", None) or is_nan:
@@ -68,106 +103,208 @@ def model_label(value: str, short: bool = False) -> str:
     return value
 
 
-# --- CSS ---------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Runtime palette accessor
+# ---------------------------------------------------------------------------
 
-_CSS = f"""
-<style>
-/* Page background */
-.stApp {{ background-color: {CREAM}; }}
+def get_palette() -> dict[str, str]:
+    """Return the active theme palette dict (reads st.session_state)."""
+    return _DARK if st.session_state.get("dark_mode", False) else _LIGHT
 
-/* Main content container padding */
-.main .block-container {{ padding-top: 2rem; padding-bottom: 3rem; }}
 
-/* Sidebar */
-section[data-testid="stSidebar"] {{
-    background-color: {SURFACE};
-    border-right: 1px solid {BORDER};
+# ---------------------------------------------------------------------------
+# CSS injection
+# ---------------------------------------------------------------------------
+
+def inject_styles() -> None:
+    """Inject dashboard-wide CSS for the current theme. Call once per page."""
+    p = get_palette()
+    bg      = p["bg"]
+    surface = p["surface"]
+    text    = p["text"]
+    muted   = p["muted"]
+    border  = p["border"]
+    success = p["success"]
+    danger  = p["danger"]
+    accent  = p["accent"]
+
+    css = f"""<style>
+/* ── Disable Chrome auto dark mode — we own all theming ─────────────────── */
+html {{ color-scheme: light; }}
+
+/* ── CSS custom properties (used by inline HTML blocks in pages) ─────────── */
+:root {{
+  --color-bg:      {bg};
+  --color-surface: {surface};
+  --color-text:    {text};
+  --color-muted:   {muted};
+  --color-border:  {border};
+  --color-success: {success};
+  --color-danger:  {danger};
+  --color-accent:  {accent};
 }}
 
-/* Metric cards */
+/* ── Page background ─────────────────────────────────────────────────────── */
+.stApp {{ background-color: {bg}; }}
+.main .block-container {{ padding-top: 2rem; padding-bottom: 3rem; }}
+
+/* ── Sidebar ─────────────────────────────────────────────────────────────── */
+section[data-testid="stSidebar"] {{
+    background-color: {surface};
+    border-right: 1px solid {border};
+}}
+section[data-testid="stSidebar"] * {{ color: {text}; }}
+
+/* ── Metric cards ────────────────────────────────────────────────────────── */
 [data-testid="metric-container"] {{
-    background-color: {SURFACE};
-    border: 1px solid {BORDER};
+    background-color: {surface};
+    border: 1px solid {border};
     border-radius: 8px;
     padding: 16px 20px;
 }}
-[data-testid="metric-container"] label {{ color: {TEXT_MUTED}; }}
-[data-testid="metric-container"] [data-testid="stMetricValue"] {{ color: {TEXT_PRIMARY}; }}
+[data-testid="metric-container"] label {{ color: {muted} !important; }}
+[data-testid="metric-container"] [data-testid="stMetricValue"] {{ color: {text} !important; }}
+[data-testid="stMetricDelta"] {{ color: {muted} !important; }}
 
-/* Tables and dataframes */
-.stDataFrame {{
-    border: 1px solid {BORDER};
-    border-radius: 6px;
-}}
+/* ── Tables / dataframes ─────────────────────────────────────────────────── */
+.stDataFrame {{ border: 1px solid {border}; border-radius: 6px; }}
 
-/* Headers */
-h1, h2, h3, h4 {{ color: {TEXT_PRIMARY}; font-weight: 600; }}
-p, li, span, div {{ color: {TEXT_PRIMARY}; }}
+/* ── Typography ──────────────────────────────────────────────────────────── */
+h1, h2, h3, h4 {{ color: {text} !important; font-weight: 600; }}
+p, li {{ color: {text}; }}
 
-/* Captions */
-[data-testid="stCaptionContainer"] {{ color: {TEXT_MUTED}; }}
+/* ── Captions ────────────────────────────────────────────────────────────── */
+[data-testid="stCaptionContainer"],
+[data-testid="stCaptionContainer"] * {{ color: {muted} !important; }}
 
-/* Dividers */
-hr {{ border-color: {BORDER}; margin: 20px 0; }}
+/* ── Dividers ────────────────────────────────────────────────────────────── */
+hr {{ border-color: {border}; margin: 20px 0; }}
 
-/* Expanders */
+/* ── Expanders ───────────────────────────────────────────────────────────── */
 .streamlit-expanderHeader,
 [data-testid="stExpander"] details summary {{
-    background-color: {SURFACE};
+    background-color: {surface} !important;
     border-radius: 6px;
-    color: {TEXT_PRIMARY};
+    color: {text} !important;
 }}
 [data-testid="stExpander"] {{
-    border: 1px solid {BORDER};
+    border: 1px solid {border} !important;
     border-radius: 6px;
-    background-color: {SURFACE};
+    background-color: {surface} !important;
 }}
+[data-testid="stExpander"] * {{ color: {text}; }}
 
-/* Input controls */
+/* ── Input controls — explicit override stops Chrome inverting them ───────── */
 .stSelectbox > div > div,
 .stMultiSelect > div > div,
 .stTextInput > div > div,
-.stNumberInput > div > div {{
-    background-color: {SURFACE};
-    border-color: {BORDER};
+.stNumberInput > div > div,
+.stTextArea > div > div {{
+    background-color: {surface} !important;
+    border-color: {border} !important;
+    color: {text} !important;
+}}
+.stSelectbox label,
+.stMultiSelect label,
+.stTextInput label,
+.stNumberInput label,
+.stTextArea label,
+.stSlider label,
+.stCheckbox label,
+.stRadio label {{ color: {muted} !important; }}
+
+/* BaseUI select internals */
+[data-baseweb="select"] > div {{
+    background-color: {surface} !important;
+    border-color: {border} !important;
+    color: {text} !important;
+}}
+[data-baseweb="select"] span,
+[data-baseweb="select"] svg {{ color: {text} !important; fill: {text}; }}
+[data-baseweb="popover"],
+[data-baseweb="menu"] {{
+    background-color: {surface} !important;
+    border-color: {border} !important;
+}}
+[data-baseweb="menu"] li {{ color: {text} !important; }}
+[data-baseweb="tag"] {{
+    background-color: {bg} !important;
+    border: 1px solid {border} !important;
+}}
+[data-baseweb="tag"] span {{ color: {text} !important; }}
+
+/* Raw input/textarea elements */
+input, input[type="text"], input[type="number"], textarea {{
+    background-color: {surface} !important;
+    color: {text} !important;
+    border-color: {border} !important;
+    -webkit-text-fill-color: {text} !important;
 }}
 
-/* Buttons */
+/* ── Buttons ─────────────────────────────────────────────────────────────── */
 .stButton > button,
 .stDownloadButton > button {{
-    background-color: {SURFACE};
-    border: 1px solid {BORDER};
-    color: {TEXT_PRIMARY};
+    background-color: {surface} !important;
+    border: 1px solid {border} !important;
+    color: {text} !important;
 }}
 .stButton > button:hover,
 .stDownloadButton > button:hover {{
-    border-color: {ACCENT};
-    color: {ACCENT};
+    border-color: {accent} !important;
+    color: {accent} !important;
+    background-color: {surface} !important;
+}}
+button[data-testid="baseButton-primary"],
+.stButton > button[kind="primary"] {{
+    background-color: {accent} !important;
+    border-color: {accent} !important;
+    color: #ffffff !important;
+}}
+button[data-testid="baseButton-primary"]:hover {{
+    opacity: 0.88;
 }}
 
-/* Alerts / callouts */
-.stAlert {{
-    background-color: {SURFACE};
-    border: 1px solid {BORDER};
-    color: {TEXT_PRIMARY};
-}}
+/* ── Alerts / callouts ───────────────────────────────────────────────────── */
+.stAlert {{ background-color: {surface} !important; color: {text} !important; }}
+.stAlert * {{ color: {text} !important; }}
 
-/* Code blocks */
+/* ── Code blocks ─────────────────────────────────────────────────────────── */
 .stCodeBlock, pre, code {{
-    background-color: {SURFACE} !important;
-    border: 1px solid {BORDER};
+    background-color: {surface} !important;
+    border: 1px solid {border} !important;
     border-radius: 6px;
-    color: {TEXT_PRIMARY} !important;
+    color: {text} !important;
+    -webkit-text-fill-color: {text} !important;
 }}
 
-/* Remove default Streamlit "Made with" footer padding */
+/* ── Markdown ────────────────────────────────────────────────────────────── */
+.stMarkdown {{ color: {text}; }}
+.stMarkdown code {{
+    background-color: {surface} !important;
+    color: {text} !important;
+    -webkit-text-fill-color: {text} !important;
+}}
+
+/* ── Nav links ───────────────────────────────────────────────────────────── */
+[data-testid="stSidebarNav"] a {{ color: {text} !important; }}
+[data-testid="stSidebarNav"] a:hover {{ color: {accent} !important; }}
+
+/* ── Spinner ─────────────────────────────────────────────────────────────── */
+[data-testid="stSpinner"] p {{ color: {muted} !important; }}
+
+/* ── Footer / header ─────────────────────────────────────────────────────── */
 footer {{ visibility: hidden; }}
 #MainMenu {{ visibility: hidden; }}
-header[data-testid="stHeader"] {{ background-color: {CREAM}; }}
-</style>
-"""
+header[data-testid="stHeader"] {{ background-color: {bg}; }}
+</style>"""
+
+    st.markdown(css, unsafe_allow_html=True)
 
 
-def inject_styles() -> None:
-    """Inject the dashboard-wide CSS. Call once per page (or once in app.py)."""
-    st.markdown(_CSS, unsafe_allow_html=True)
+def inject_theme_toggle() -> None:
+    """Render a light/dark mode toggle button. Intended for the sidebar."""
+    dark = st.session_state.get("dark_mode", False)
+    label = "Light mode" if dark else "Dark mode"
+    if st.button(label, key="_theme_toggle", use_container_width=True):
+        st.session_state.dark_mode = not dark
+        st.rerun()

@@ -85,12 +85,12 @@ for col, (_, row) in zip(cols, summary_df.iterrows()):
         for sub in row["subdomains"]:
             label = subdomain_label(sub, short=True)
             badges_html += (
-                f"<span style='background-color:#EEEBE4;border:1px solid #D4D0C8;"
+                f"<span style='background-color:var(--color-surface);border:1px solid var(--color-border);"
                 f"border-radius:12px;padding:2px 10px;margin:2px 4px 2px 0;"
-                f"font-size:12px;color:#1A1A1A;display:inline-block;'>{label}</span>"
+                f"font-size:12px;color:var(--color-text);display:inline-block;'>{label}</span>"
             )
         st.markdown(
-            f"<div style='margin-top:8px;'><span style='color:#5A5A5A;font-size:12px;'>"
+            f"<div style='margin-top:8px;'><span style='color:var(--color-muted);font-size:12px;'>"
             f"Coverage:</span><br>{badges_html}</div>",
             unsafe_allow_html=True,
         )

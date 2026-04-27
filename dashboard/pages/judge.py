@@ -230,12 +230,12 @@ def _render_active_judge() -> None:
     mins, secs = divmod(int(elapsed), 60)
     st.markdown(
         f"""
-        <div style="background:{SURFACE};border:1px solid {BORDER};
+        <div style="background:var(--color-surface);border:1px solid var(--color-border);
                     border-left:4px solid {badge_color};
                     border-radius:8px;padding:14px 18px;margin-bottom:10px;">
-            <span style="font-size:12px;color:{TEXT_MUTED};letter-spacing:0.5px;">STATUS</span>
+            <span style="font-size:12px;color:var(--color-muted);letter-spacing:0.5px;">STATUS</span>
             <h3 style="margin:2px 0 6px 0;color:{badge_color};">{badge_text}</h3>
-            <div style="color:{TEXT_MUTED};font-size:13px;">
+            <div style="color:var(--color-muted);font-size:13px;">
                 pid <code>{run.pid}</code>
                 &nbsp;·&nbsp; elapsed <strong>{mins}m {secs:02d}s</strong>
             </div>
@@ -466,24 +466,24 @@ est_time_min = max(1, scoped_count * 5 / 60 / max(1, concurrency))  # ~5s/row at
 
 st.markdown(
     f"""
-    <div style="background:{SURFACE};border:1px solid {BORDER};
+    <div style="background:var(--color-surface);border:1px solid var(--color-border);
                 border-left:4px solid {preview_color};border-radius:8px;
                 padding:14px 18px;">
         <div style="display:flex;gap:40px;flex-wrap:wrap;">
             <div>
-                <div style="font-size:11px;color:{TEXT_MUTED};">ROWS TO JUDGE</div>
-                <div style="font-size:24px;font-weight:600;">{scoped_count:,}</div>
-                <div style="font-size:11px;color:{TEXT_MUTED};">{scope_note}</div>
+                <div style="font-size:11px;color:var(--color-muted);">ROWS TO JUDGE</div>
+                <div style="font-size:24px;font-weight:600;color:var(--color-text);">{scoped_count:,}</div>
+                <div style="font-size:11px;color:var(--color-muted);">{scope_note}</div>
             </div>
             <div>
-                <div style="font-size:11px;color:{TEXT_MUTED};">EST. RUNTIME</div>
-                <div style="font-size:24px;font-weight:600;">~{est_time_min:.0f} min</div>
-                <div style="font-size:11px;color:{TEXT_MUTED};">(~5s/row · concurrency {concurrency})</div>
+                <div style="font-size:11px;color:var(--color-muted);">EST. RUNTIME</div>
+                <div style="font-size:24px;font-weight:600;color:var(--color-text);">~{est_time_min:.0f} min</div>
+                <div style="font-size:11px;color:var(--color-muted);">(~5s/row · concurrency {concurrency})</div>
             </div>
             <div>
-                <div style="font-size:11px;color:{TEXT_MUTED};">EST. API COST</div>
-                <div style="font-size:24px;font-weight:600;">~${est_cost:.2f}</div>
-                <div style="font-size:11px;color:{TEXT_MUTED};">({judge_model})</div>
+                <div style="font-size:11px;color:var(--color-muted);">EST. API COST</div>
+                <div style="font-size:24px;font-weight:600;color:var(--color-text);">~${est_cost:.2f}</div>
+                <div style="font-size:11px;color:var(--color-muted);">({judge_model})</div>
             </div>
         </div>
     </div>

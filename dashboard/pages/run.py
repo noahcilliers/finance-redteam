@@ -84,9 +84,9 @@ for col, name, ok in (
     color = SUCCESS if ok else DANGER
     state = "present" if ok else "missing"
     col.markdown(
-        f"<div style='background:{SURFACE};border:1px solid {BORDER};"
+        f"<div style='background:var(--color-surface);border:1px solid var(--color-border);"
         f"border-left:4px solid {color};border-radius:6px;padding:8px 12px;'>"
-        f"<div style='font-size:11px;color:{TEXT_MUTED};'>{name}</div>"
+        f"<div style='font-size:11px;color:var(--color-muted);'>{name}</div>"
         f"<div style='font-weight:600;color:{color};font-size:14px;'>{state}</div>"
         f"</div>",
         unsafe_allow_html=True,
@@ -142,12 +142,12 @@ def _render_active_run() -> None:
     mins, secs = divmod(int(elapsed), 60)
     st.markdown(
         f"""
-        <div style="background:{SURFACE};border:1px solid {BORDER};
+        <div style="background:var(--color-surface);border:1px solid var(--color-border);
                     border-left:4px solid {badge_color};
                     border-radius:8px;padding:14px 18px;margin-bottom:10px;">
-            <span style="font-size:12px;color:{TEXT_MUTED};letter-spacing:0.5px;">STATUS</span>
+            <span style="font-size:12px;color:var(--color-muted);letter-spacing:0.5px;">STATUS</span>
             <h3 style="margin:2px 0 6px 0;color:{badge_color};">{badge_text}</h3>
-            <div style="color:{TEXT_MUTED};font-size:13px;">
+            <div style="color:var(--color-muted);font-size:13px;">
                 pid <code>{active.pid}</code>
                 &nbsp;·&nbsp; elapsed <strong>{mins}m {secs:02d}s</strong>
                 &nbsp;·&nbsp; config <code>{Path(active.config_path).name if active.config_path else '—'}</code>
@@ -423,18 +423,18 @@ st.subheader("4 · Scope preview")
 preview_color = DANGER if preview.matching_seeds == 0 else ACCENT
 st.markdown(
     f"""
-    <div style="background:{SURFACE};border:1px solid {BORDER};
+    <div style="background:var(--color-surface);border:1px solid var(--color-border);
                 border-left:4px solid {preview_color};border-radius:8px;
                 padding:14px 18px;">
         <div style="display:flex;gap:40px;flex-wrap:wrap;">
-            <div><div style="font-size:11px;color:{TEXT_MUTED};">MATCHING SEEDS</div>
-                 <div style="font-size:24px;font-weight:600;">{preview.matching_seeds}</div></div>
-            <div><div style="font-size:11px;color:{TEXT_MUTED};">TOTAL ATTACKS</div>
-                 <div style="font-size:24px;font-weight:600;">{preview.total_attacks:,}</div>
-                 <div style="font-size:11px;color:{TEXT_MUTED};">{preview.attacks_note}</div></div>
-            <div><div style="font-size:11px;color:{TEXT_MUTED};">EST. RUNTIME</div>
-                 <div style="font-size:24px;font-weight:600;">{preview.humanised_runtime()}</div>
-                 <div style="font-size:11px;color:{TEXT_MUTED};">(~90s/attack at {float(target_rps):.1f} rps)</div></div>
+            <div><div style="font-size:11px;color:var(--color-muted);">MATCHING SEEDS</div>
+                 <div style="font-size:24px;font-weight:600;color:var(--color-text);">{preview.matching_seeds}</div></div>
+            <div><div style="font-size:11px;color:var(--color-muted);">TOTAL ATTACKS</div>
+                 <div style="font-size:24px;font-weight:600;color:var(--color-text);">{preview.total_attacks:,}</div>
+                 <div style="font-size:11px;color:var(--color-muted);">{preview.attacks_note}</div></div>
+            <div><div style="font-size:11px;color:var(--color-muted);">EST. RUNTIME</div>
+                 <div style="font-size:24px;font-weight:600;color:var(--color-text);">{preview.humanised_runtime()}</div>
+                 <div style="font-size:11px;color:var(--color-muted);">(~90s/attack at {float(target_rps):.1f} rps)</div></div>
         </div>
     </div>
     """,

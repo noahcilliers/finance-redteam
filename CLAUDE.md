@@ -49,3 +49,60 @@ print(f'{len(seeds)} seeds matched')
 print(MutationPromptBuilder(cfg).build(seeds[0]))
 "
 ```
+
+## Running the red-team pipeline
+
+### Environment
+```bash
+cd /Users/noahcilliers/finance-redteam
+source redteam-env/bin/activate
+```
+
+### Test model connectivity
+```bash
+python test_connections.py
+# Checks: gpt-4o, gpt-3.5-turbo, claude-sonnet-4-6, gemini-2.5-flash, llama2 (ollama/local)
+```
+
+### Run attacks (DeepTeam pipeline)
+Config lives at `execution/pipeline_config.yaml` — edit `target_model` / `attacker_model` before each run.
+
+```bash
+# Live run (uses config as-is)
+python -m execution.deepteam_run --config execution/pipeline_config.yaml
+
+# Dry run — builds prompts, no API calls to target
+python -m execution.deepteam_run --config execution/pipeline_config.yaml --dry-run
+
+# Narrow to one subdomain and fewer variants
+python -m execution.deepteam_run --config execution/pipeline_config.yaml \
+  --subdomain 3a_investment_advice --variants-per-seed 2
+
+# Library-faithful mode (no attacker LLM — deterministic enhancers only)
+python -m execution.deepteam_run --config execution/pipeline_config.yaml \
+  --mode library-faithful --no-llm-enhancers
+```
+
+### Run the judge (score unjudged results)
+```bash
+# Claude judge (default)
+python -m evaluation.eval_runner --judge claude --model claude-sonnet-4-6 --concurrency 2
+
+# GPT-4o judge
+python -m evaluation.eval_runner --judge gpt4o --model gpt-4o --concurrency 2
+
+# Dry run (no API calls — smoke test)
+python -m evaluation.eval_runner --dry-run
+```
+
+### Launch the dashboard
+```bash
+streamlit run dashboard/app.py
+```
+
+### Model IDs for config
+| Role     | Model options |
+|----------|--------------|
+| Target   | `gpt-4o-mini`, `gpt-4o`, `claude-sonnet-4-6`, `claude-haiku-4-5`, `gemini-2.5-flash` |
+| Attacker | `claude-sonnet-4-6`, `gpt-4o`, `gpt-4o-mini` |
+| Judge    | `claude-sonnet-4-6`, `claude-haiku-4-5`, `gpt-4o`, `gpt-4o-mini` |

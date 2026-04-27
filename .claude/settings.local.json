@@ -1,7 +1,9 @@
 {
   "permissions": {
     "allow": [
-      "Bash(python3 -c ':*)"
+      "Bash(python3 -c ':*)",
+      "Bash(source redteam-env/bin/activate)",
+      "Bash(python -m execution.deepteam_run --config execution/pipeline_config.yaml)"
     ]
   }
 }

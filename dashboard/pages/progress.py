@@ -40,6 +40,7 @@ from utils.charts import (  # noqa: E402
     TEXT_MUTED,
     TEXT_PRIMARY,
     apply_chart_theme,
+    get_palette,
 )
 from utils.coverage import (  # noqa: E402
     CELL_TARGET,
@@ -67,14 +68,10 @@ _RED = "#B83232"     # matches DANGER
 _AMBER = "#C68A2E"   # warm amber (sits between cream and danger)
 _GREEN = "#2D6A4F"   # matches SUCCESS
 
-# Heatmap gradient: white (0 runs) → amber (50 runs) → green (≥100 runs).
-# N/A cells get rendered as light grey via a separate shape overlay.
-_NA_GREY = "#D9D5CD"
-_HEATMAP_GRADIENT = [
-    [0.0, "#FFFFFF"],
-    [0.5, "#F0C46B"],
-    [1.0, "#2D6A4F"],
-]
+# N/A cells: light grey in light mode, dark grey in dark mode.
+# Heatmap gradient base adjusts to current theme in _build_coverage_heatmap.
+_NA_GREY_LIGHT = "#D9D5CD"
+_NA_GREY_DARK  = "#2A2A2A"
 
 
 def _status_color(pct: float) -> str:
@@ -176,46 +173,46 @@ banner_html = f"""
     align-items: center;
 ">
   <div style="min-width: 160px;">
-    <div style="color: {TEXT_MUTED}; font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em;">
+    <div style="color: var(--color-muted); font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em;">
       Overall completion
     </div>
     <div style="color: {banner_color}; font-size: 32px; font-weight: 700; line-height: 1.1;">
       {overall_pct:.1%}
     </div>
-    <div style="color: {TEXT_MUTED}; font-size: 12px;">
+    <div style="color: var(--color-muted); font-size: 12px;">
       Status: <strong style="color: {banner_color};">{_status_label(overall_pct)}</strong>
     </div>
   </div>
   <div style="min-width: 160px;">
-    <div style="color: {TEXT_MUTED}; font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em;">
+    <div style="color: var(--color-muted); font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em;">
       Valid runs to date
     </div>
-    <div style="color: {TEXT_PRIMARY}; font-size: 28px; font-weight: 600;">
+    <div style="color: var(--color-text); font-size: 28px; font-weight: 600;">
       {total_valid_capped:,}
     </div>
-    <div style="color: {TEXT_MUTED}; font-size: 12px;">
+    <div style="color: var(--color-muted); font-size: 12px;">
       of {TOTAL_TARGET_RUNS:,} target ({total_valid_raw:,} including over-runs)
     </div>
   </div>
   <div style="min-width: 160px;">
-    <div style="color: {TEXT_MUTED}; font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em;">
+    <div style="color: var(--color-muted); font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em;">
       Runs remaining
     </div>
-    <div style="color: {TEXT_PRIMARY}; font-size: 28px; font-weight: 600;">
+    <div style="color: var(--color-text); font-size: 28px; font-weight: 600;">
       {runs_remaining:,}
     </div>
-    <div style="color: {TEXT_MUTED}; font-size: 12px;">
+    <div style="color: var(--color-muted); font-size: 12px;">
       to clear the v1 benchmark floor
     </div>
   </div>
   <div style="min-width: 180px;">
-    <div style="color: {TEXT_MUTED}; font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em;">
+    <div style="color: var(--color-muted); font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em;">
       Recent throughput
     </div>
-    <div style="color: {TEXT_PRIMARY}; font-size: 28px; font-weight: 600;">
-      {runs_per_day:,.0f} <span style="font-size: 14px; color: {TEXT_MUTED}; font-weight: 400;">/day</span>
+    <div style="color: var(--color-text); font-size: 28px; font-weight: 600;">
+      {runs_per_day:,.0f} <span style="font-size: 14px; color: var(--color-muted); font-weight: 400;">/day</span>
     </div>
-    <div style="color: {TEXT_MUTED}; font-size: 12px;">
+    <div style="color: var(--color-muted); font-size: 12px;">
       {('~' + f'{runs_remaining / runs_per_day:,.0f}' + ' days to target') if runs_per_day > 0 else 'no valid runs in last 7 days'}
     </div>
   </div>
@@ -262,16 +259,16 @@ def _render_model_bar(model: str, organisation: str) -> None:
 
     bar_html = f"""
     <div style="
-        background-color: {SURFACE};
-        border: 1px solid {BORDER};
+        background-color: var(--color-surface);
+        border: 1px solid var(--color-border);
         border-radius: 8px;
         padding: 14px 18px;
         margin-bottom: 10px;
     ">
       <div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 6px;">
         <div>
-          <code style="font-size: 14px; color: {TEXT_PRIMARY};">{model}</code>
-          <span style="color: {TEXT_MUTED}; font-size: 12px; margin-left: 8px;">{organisation}</span>
+          <code style="font-size: 14px; color: var(--color-text);">{model}</code>
+          <span style="color: var(--color-muted); font-size: 12px; margin-left: 8px;">{organisation}</span>
         </div>
         <div>
           <span style="
@@ -284,15 +281,15 @@ def _render_model_bar(model: str, organisation: str) -> None:
               text-transform: uppercase;
               letter-spacing: 0.04em;
           ">{chip}</span>
-          <span style="color: {TEXT_PRIMARY}; font-weight: 600; font-size: 14px; margin-left: 10px;">
+          <span style="color: var(--color-text); font-weight: 600; font-size: 14px; margin-left: 10px;">
             {valid_capped:,} / {TARGET_RUNS_PER_MODEL:,}
           </span>
-          <span style="color: {TEXT_MUTED}; font-size: 13px; margin-left: 6px;">({pct:.1%})</span>
+          <span style="color: var(--color-muted); font-size: 13px; margin-left: 6px;">({pct:.1%})</span>
         </div>
       </div>
       <div style="
-          background-color: {CREAM};
-          border: 1px solid {BORDER};
+          background-color: var(--color-bg);
+          border: 1px solid var(--color-border);
           border-radius: 4px;
           height: 12px;
           overflow: hidden;
@@ -303,7 +300,7 @@ def _render_model_bar(model: str, organisation: str) -> None:
             height: 100%;
         "></div>
       </div>
-      <div style="margin-top: 6px; color: {TEXT_MUTED}; font-size: 12px;">
+      <div style="margin-top: 6px; color: var(--color-muted); font-size: 12px;">
         {completed_cells} / {CELLS_PER_MODEL} cells complete
         (≥{CELL_TARGET} valid runs)
         {('· ' + f'{raw_total - valid_capped:,}' + ' over-run rows above target') if raw_total > valid_capped else ''}
@@ -338,6 +335,14 @@ selected_model = st.selectbox(
 
 
 def _build_coverage_heatmap(model: str) -> go.Figure:
+    p = get_palette()
+    na_grey = _NA_GREY_DARK if p["bg"] == "#111111" else _NA_GREY_LIGHT
+    heatmap_gradient = [
+        [0.0, p["surface"]],
+        [0.5, "#F0C46B"],
+        [1.0, "#2D6A4F"],
+    ]
+
     technique_ids = [t for t, _ in TECHNIQUES]
     technique_labels = [TECHNIQUE_LABEL[t] for t in technique_ids]
     subdomain_ids = [s for s, _ in SUBDOMAINS]
@@ -382,7 +387,7 @@ def _build_coverage_heatmap(model: str) -> go.Figure:
             z=z,
             x=subdomain_labels,
             y=technique_labels,
-            colorscale=_HEATMAP_GRADIENT,
+            colorscale=heatmap_gradient,
             zmin=0,
             zmax=CELL_TARGET,
             xgap=2,
@@ -393,7 +398,7 @@ def _build_coverage_heatmap(model: str) -> go.Figure:
                 title=dict(text="Valid runs", side="right"),
                 tickvals=[0, CELL_TARGET // 2, CELL_TARGET],
                 ticktext=["0", str(CELL_TARGET // 2), f"{CELL_TARGET}+"],
-                outlinecolor=BORDER,
+                outlinecolor=p["border"],
                 outlinewidth=1,
             ),
         )
@@ -415,8 +420,8 @@ def _build_coverage_heatmap(model: str) -> go.Figure:
                         x1=x1,
                         y0=y0,
                         y1=y1,
-                        fillcolor=_NA_GREY,
-                        line=dict(color=BORDER, width=1),
+                        fillcolor=na_grey,
+                        line=dict(color=p["border"], width=1),
                         layer="above",
                     )
                 )
@@ -426,7 +431,7 @@ def _build_coverage_heatmap(model: str) -> go.Figure:
                     y=i,
                     text="N/A",
                     showarrow=False,
-                    font=dict(color=TEXT_MUTED, size=11, family="Inter, system-ui, sans-serif"),
+                    font=dict(color=p["muted"], size=11, family="Inter, system-ui, sans-serif"),
                 )
             elif counts[i, j] == 0:
                 shapes.append(
@@ -451,7 +456,7 @@ def _build_coverage_heatmap(model: str) -> go.Figure:
                 continue
             count = counts[i, j]
             # Use white text on dark green, otherwise dark text.
-            text_color = "#FFFFFF" if count >= 70 else TEXT_PRIMARY
+            text_color = "#FFFFFF" if count >= 70 else p["text"]
             fig.add_annotation(
                 x=j,
                 y=i,

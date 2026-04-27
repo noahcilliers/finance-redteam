@@ -22,6 +22,7 @@ from .styles import (
     SURFACE,
     TEXT_MUTED,
     TEXT_PRIMARY,
+    get_palette,
     model_label,
     subdomain_label,
 )
@@ -30,6 +31,7 @@ from .styles import (
 __all__ = [
     "ACCENT", "BORDER", "CREAM", "DANGER", "MODEL_COLORS",
     "SUCCESS", "SURFACE", "TEXT_MUTED", "TEXT_PRIMARY",
+    "get_palette",
     "apply_chart_theme",
     "asr_by_subdomain_bar",
     "severity_histogram",
@@ -42,22 +44,23 @@ __all__ = [
 
 
 def apply_chart_theme(fig: go.Figure, title: str = "") -> go.Figure:
-    """Apply the dashboard theme to any Plotly figure. Idempotent."""
+    """Apply the current dashboard theme to any Plotly figure."""
+    p = get_palette()
     fig.update_layout(
-        plot_bgcolor=CREAM,
-        paper_bgcolor=CREAM,
-        font=dict(color=TEXT_PRIMARY, family="Inter, system-ui, sans-serif", size=13),
+        plot_bgcolor=p["bg"],
+        paper_bgcolor=p["bg"],
+        font=dict(color=p["text"], family="Inter, system-ui, sans-serif", size=13),
         title=dict(
             text=title,
-            font=dict(size=15, color=TEXT_PRIMARY),
+            font=dict(size=15, color=p["text"]),
             x=0,
             xanchor="left",
         ),
-        xaxis=dict(gridcolor=BORDER, linecolor=BORDER, tickfont=dict(color=TEXT_MUTED)),
-        yaxis=dict(gridcolor=BORDER, linecolor=BORDER, tickfont=dict(color=TEXT_MUTED)),
-        legend=dict(bgcolor=SURFACE, bordercolor=BORDER, borderwidth=1),
+        xaxis=dict(gridcolor=p["border"], linecolor=p["border"], tickfont=dict(color=p["muted"])),
+        yaxis=dict(gridcolor=p["border"], linecolor=p["border"], tickfont=dict(color=p["muted"])),
+        legend=dict(bgcolor=p["surface"], bordercolor=p["border"], borderwidth=1),
         margin=dict(l=40, r=20, t=48, b=40),
-        hoverlabel=dict(bgcolor=SURFACE, bordercolor=BORDER, font_color=TEXT_PRIMARY),
+        hoverlabel=dict(bgcolor=p["surface"], bordercolor=p["border"], font_color=p["text"]),
     )
     return fig
 
@@ -290,7 +293,7 @@ def _build_heatmap(
             colorbar=dict(
                 title=dict(text="ASR", side="right"),
                 tickformat=".0%",
-                outlinecolor=BORDER,
+                outlinecolor=get_palette()["border"],
                 outlinewidth=1,
             ),
         )

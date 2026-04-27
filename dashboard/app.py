@@ -21,7 +21,7 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 if _HERE not in sys.path:
     sys.path.insert(0, _HERE)
 
-from utils.styles import inject_styles  # noqa: E402
+from utils.styles import inject_styles, inject_theme_toggle  # noqa: E402
 
 
 def main() -> None:
@@ -32,6 +32,10 @@ def main() -> None:
         initial_sidebar_state="expanded",
     )
     inject_styles()
+
+    with st.sidebar:
+        inject_theme_toggle()
+        st.divider()
 
     pages = {
         "Analysis": [
